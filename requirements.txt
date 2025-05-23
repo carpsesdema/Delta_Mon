@@ -1,0 +1,10 @@
+# Delta_Mon/requirements.txt
+
+PySide6
+pywin32
+Pillow
+opencv-python
+pyautogui
+pytesseract
+python-dotenv
+numpy
