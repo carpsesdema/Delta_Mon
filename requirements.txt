@@ -8,3 +8,4 @@ pyautogui
 pytesseract
 python-dotenv
 numpy
+requests
