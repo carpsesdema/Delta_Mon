@@ -9,3 +9,5 @@ pytesseract
 python-dotenv
 numpy
 requests
+keyring
+cryptography

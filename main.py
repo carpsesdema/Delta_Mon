@@ -1,18 +1,40 @@
-# Delta_Mon/main.py
+# main.py (modified)
 
 import sys
 from PySide6.QtWidgets import QApplication
 from ui.main_window import MainWindow
+from ui.login_dialog import LoginDialog
+from utils.credential_manager import CredentialManager
+from utils.tos_launcher import TosLauncher
 
-if __name__ == "__main__":
+
+def main():
     app = QApplication(sys.argv)
 
-    # The stylesheet is applied within MainWindow in this version
-    # If you later move QSS to ui/styles.py and want to apply it globally:
-    # from ui.styles import DARK_THEME_QSS
-    # app.setStyleSheet(DARK_THEME_QSS)
+    # Initialize credential manager
+    credential_manager = CredentialManager()
 
-    window = MainWindow()
-    window.show()
+    # Show login dialog first
+    login_dialog = LoginDialog()
 
-    sys.exit(app.exec())
+    if login_dialog.exec():
+        # Login accepted
+        username, password = credential_manager.get_credentials()
+
+        # Create and show main window
+        window = MainWindow()
+        window.show()
+
+        # Launch TOS if auto-launch is enabled
+        if login_dialog.auto_launch_check.isChecked():
+            tos_launcher = TosLauncher()
+            tos_launcher.launch_and_login(username, password)
+
+        sys.exit(app.exec())
+    else:
+        # Login cancelled
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
