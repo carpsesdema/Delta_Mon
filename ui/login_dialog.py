@@ -227,16 +227,12 @@ class LoginDialog(QDialog):
                                 "Please enter both username and password")
             return
 
-        # Save credentials if requested
-        if self.save_credentials_check.isChecked():
-            self.credential_manager.save_credentials(username, password)
+        # Get executable path
+        exe_path = self.exe_path_edit.text().strip() if self.exe_path_edit.text().strip() else None
 
-        # Store executable path if custom
-        exe_path = self.exe_path_edit.text()
-        if exe_path:
-            # Save it to settings
-            # This would ideally be in a settings manager class
-            pass
+        # Save credentials including executable path
+        if self.save_credentials_check.isChecked():
+            self.credential_manager.save_credentials(username, password, exe_path)
 
         # Emit signal with credentials
         self.login_successful.emit(username, password)

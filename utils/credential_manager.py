@@ -1,4 +1,4 @@
-# utils/credential_manager.py
+# Delta_Mon/utils/credential_manager.py
 
 import os
 import json
@@ -69,18 +69,23 @@ class CredentialManager:
 
         return stored_key
 
-    def save_credentials(self, username, password):
+    def save_credentials(self, username, password, executable_path=None):
         """
         Save ThinkOrSwim credentials securely.
 
         Args:
             username: ThinkOrSwim username
             password: ThinkOrSwim password
+            executable_path: Path to ToS executable (optional)
         """
         try:
             # Use keyring as primary storage
             keyring.set_password(self.app_name, "tos_username", username)
             keyring.set_password(self.app_name, "tos_password", password)
+
+            # Store executable path if provided
+            if executable_path:
+                keyring.set_password(self.app_name, "tos_executable", executable_path)
 
             # Backup storage using file encryption
             key = self._get_encryption_key()
@@ -88,7 +93,8 @@ class CredentialManager:
 
             creds = {
                 "username": username,
-                "password": password
+                "password": password,
+                "executable_path": executable_path or ""
             }
 
             encrypted = cipher.encrypt(json.dumps(creds).encode())
@@ -111,20 +117,21 @@ class CredentialManager:
         Get stored ThinkOrSwim credentials.
 
         Returns:
-            Tuple of (username, password) or (None, None) if not found
+            Tuple of (username, password, executable_path) or (None, None, None) if not found
         """
         try:
             # Try keyring first
             username = keyring.get_password(self.app_name, "tos_username")
             password = keyring.get_password(self.app_name, "tos_password")
+            executable_path = keyring.get_password(self.app_name, "tos_executable")
 
             if username and password:
-                return username, password
+                return username, password, executable_path
 
             # Fall back to backup file
             backup_path = os.path.join(os.path.expanduser('~'), '.deltamonbackup')
             if not os.path.exists(backup_path):
-                return None, None
+                return None, None, None
 
             # Decrypt backup
             key = self._get_encryption_key()
@@ -136,15 +143,17 @@ class CredentialManager:
             decrypted = cipher.decrypt(encrypted)
             creds = json.loads(decrypted.decode())
 
-            return creds.get("username"), creds.get("password")
+            return (creds.get("username"),
+                    creds.get("password"),
+                    creds.get("executable_path"))
 
         except Exception as e:
             print(f"Error retrieving credentials: {e}")
-            return None, None
+            return None, None, None
 
     def has_saved_credentials(self):
         """Check if credentials are saved."""
-        username, password = self.get_credentials()
+        username, password, _ = self.get_credentials()
         return bool(username and password)
 
     def clear_credentials(self):
@@ -152,6 +161,12 @@ class CredentialManager:
         try:
             keyring.delete_password(self.app_name, "tos_username")
             keyring.delete_password(self.app_name, "tos_password")
+
+            # Also clear executable path
+            try:
+                keyring.delete_password(self.app_name, "tos_executable")
+            except:
+                pass  # May not exist
 
             # Remove backup file
             backup_path = os.path.join(os.path.expanduser('~'), '.deltamonbackup')

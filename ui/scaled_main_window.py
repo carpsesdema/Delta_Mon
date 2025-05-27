@@ -173,10 +173,11 @@ class AutoLoginWorker(QThread):
     progress_update = Signal(int)
     login_complete = Signal(bool)
 
-    def __init__(self, username, password, tos_launcher, window_manager):
+    def __init__(self, username, password, executable_path, tos_launcher, window_manager):
         super().__init__()
         self.username = username
         self.password = password
+        self.executable_path = executable_path
         self.tos_launcher = tos_launcher
         self.window_manager = window_manager
 
@@ -200,7 +201,8 @@ class AutoLoginWorker(QThread):
                 self.status_update.emit("🚀 Launching Thinkorswim...")
                 self.progress_update.emit(20)
 
-                launch_success = self.tos_launcher.launch_tos()
+                # Use the saved executable path
+                launch_success = self.tos_launcher.launch_tos(self.executable_path)
                 if not launch_success:
                     self.status_update.emit("❌ Failed to launch ToS")
                     self.login_complete.emit(False)
@@ -637,7 +639,7 @@ class ScaledMainWindow(QMainWindow):
         self.log_monitoring_event("✏️ Opening credential editor...")
 
         # Get current credentials to populate the dialog
-        current_username, current_password = self.credential_manager.get_credentials()
+        current_username, current_password, current_executable = self.credential_manager.get_credentials()
 
         # Create and show login dialog
         login_dialog = LoginDialog(self)
@@ -647,6 +649,8 @@ class ScaledMainWindow(QMainWindow):
             login_dialog.username_edit.setText(current_username)
         if current_password:
             login_dialog.password_edit.setText(current_password)
+        if current_executable:
+            login_dialog.exe_path_edit.setText(current_executable)
 
         # Update dialog title and text for editing
         login_dialog.setWindowTitle("Edit ToS Credentials")
@@ -659,6 +663,47 @@ class ScaledMainWindow(QMainWindow):
             self.log_monitoring_event("✅ Credentials updated successfully!")
         else:
             self.log_monitoring_event("❌ Credential editing cancelled")
+
+    @Slot()
+    def start_auto_login(self):
+        """Start the automatic login process."""
+        self.log_monitoring_event("🔑 Starting auto-login process...")
+
+        # Check if we have saved credentials (now includes executable path)
+        username, password, executable_path = self.credential_manager.get_credentials()
+
+        if not username or not password:
+            self.log_monitoring_event("❌ No saved credentials found")
+
+            # Show login dialog
+            login_dialog = LoginDialog(self)
+            login_dialog.login_successful.connect(self.on_credentials_saved)
+
+            if login_dialog.exec() == login_dialog.DialogCode.Accepted:
+                # Credentials were saved, now try auto-login
+                username, password, executable_path = self.credential_manager.get_credentials()
+                if username and password:
+                    self._execute_auto_login(username, password, executable_path)
+            else:
+                self.log_monitoring_event("❌ Auto-login cancelled")
+
+        else:
+            self.log_monitoring_event("✅ Using saved credentials")
+            self._execute_auto_login(username, password, executable_path)
+
+    def _execute_auto_login(self, username: str, password: str, executable_path: str = None):
+        """Execute the actual auto-login process."""
+        # Disable login button during process
+        self.auto_login_button.setEnabled(False)
+        self.setup_progress.setVisible(True)
+        self.setup_progress.setValue(0)
+
+        # Start auto-login worker with executable path
+        self.login_worker = AutoLoginWorker(username, password, executable_path, self.tos_launcher, self.window_manager)
+        self.login_worker.status_update.connect(self.on_login_status_update)
+        self.login_worker.progress_update.connect(self.on_login_progress_update)
+        self.login_worker.login_complete.connect(self.on_login_complete)
+        self.login_worker.start()
 
     @Slot(str, str)
     def on_credentials_updated(self, username: str, password: str):
