@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
-from ui.scaled_main_window import ScaledMainWindow
+from ui.overlay_main_window import OverlayMainWindow
 import os
 
 if __name__ == "__main__":
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     else:
         print(f"Warning: Application icon not found at {icon_path}")
 
-    window = ScaledMainWindow()
+    window = OverlayMainWindow()
     window.show()
 
     sys.exit(app.exec())
