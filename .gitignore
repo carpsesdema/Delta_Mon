@@ -322,3 +322,40 @@ __cache__/
 # Keep documentation images
 !docs/images/
 !README_images/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Application-specific
+config.ini
+pradeep_config.ini
+*.log
+
+# Assets and captures (optional - you might want to keep some examples)
+assets/captures/
+debug_images/
+
+# Tesseract OCR - Don't push to repo, bundle separately for distribution
+tesseract/
+
+# Credentials and sensitive data
+*.key
+*.pem
+.env
