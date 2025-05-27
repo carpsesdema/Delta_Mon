@@ -142,7 +142,7 @@ SCALED_DARK_STYLE_SHEET = """
 
 
 class ScaledTemplateSetupWorker(QThread):
-    """Enhanced setup worker for large scale monitoring."""
+    """Enhanced setup worker for multi-account monitoring."""
 
     status_update = Signal(str)
     progress_update = Signal(int)
@@ -155,11 +155,11 @@ class ScaledTemplateSetupWorker(QThread):
     def run(self):
         """Run the template setup process with enhanced validation."""
         try:
-            self.status_update.emit("🚀 Starting enterprise-scale template setup...")
+            self.status_update.emit("🚀 Starting multi-account template setup...")
             self.progress_update.emit(5)
 
-            # Enhanced setup process for 25 account monitoring
-            self.status_update.emit("📊 Optimizing for 25+ account monitoring...")
+            # Enhanced setup process for multiple account monitoring
+            self.status_update.emit("📊 Optimizing for multi-account monitoring...")
             self.progress_update.emit(10)
 
             # Step 1: Multiple reference captures for robustness
@@ -175,15 +175,15 @@ class ScaledTemplateSetupWorker(QThread):
             self.status_update.emit("🎯 Starting enhanced auto-capture process...")
             self.progress_update.emit(35)
 
-            # Longer delay for user to prepare for 25-account workflow
+            # Longer delay for user to prepare for multi-account workflow
             self.status_update.emit("👆 Get ready to click the account dropdown...")
-            self.status_update.emit("📋 TIP: For 25 accounts, ensure dropdown shows ALL accounts!")
+            self.status_update.emit("📋 TIP: Ensure dropdown shows ALL your accounts!")
             time.sleep(3)
 
             self.progress_update.emit(45)
 
             # Capture before state
-            before_path = self.tos_navigator.capture_upper_left_region("before_dropdown_enterprise.png")
+            before_path = self.tos_navigator.capture_upper_left_region("before_dropdown_multi.png")
             if not before_path:
                 self.status_update.emit("❌ Failed to capture before state")
                 self.finished_setup.emit(False)
@@ -192,13 +192,13 @@ class ScaledTemplateSetupWorker(QThread):
             # Extended countdown for user preparation
             self.status_update.emit("👆 CLICK DROPDOWN NOW! (10 seconds...)")
             for i in range(10, 0, -1):
-                self.status_update.emit(f"👆 Click account dropdown! ({i}s) - Make sure ALL 25 accounts are visible!")
+                self.status_update.emit(f"👆 Click account dropdown! ({i}s) - Make sure ALL accounts are visible!")
                 time.sleep(1)
                 self.progress_update.emit(45 + i * 3)
 
             # Capture after state
             self.status_update.emit("📸 Capturing expanded dropdown state...")
-            after_path = self.tos_navigator.capture_upper_left_region("after_dropdown_enterprise.png",
+            after_path = self.tos_navigator.capture_upper_left_region("after_dropdown_multi.png",
                                                                       width_ratio=0.5,
                                                                       height_ratio=0.6)  # Larger capture for many accounts
             if not after_path:
@@ -209,14 +209,14 @@ class ScaledTemplateSetupWorker(QThread):
             self.progress_update.emit(85)
 
             # Create and validate template
-            self.status_update.emit("🔍 Creating enterprise template...")
+            self.status_update.emit("🔍 Creating multi-account template...")
             template_created = self.tos_navigator._create_template_from_difference(before_path, after_path)
 
             if template_created:
                 self.progress_update.emit(95)
 
-                # Enhanced testing for enterprise scale
-                self.status_update.emit("🧪 Running enterprise-scale validation...")
+                # Enhanced testing for multi-account scale
+                self.status_update.emit("🧪 Running multi-account validation...")
                 time.sleep(2)
 
                 # Test template at different confidence levels
@@ -231,25 +231,25 @@ class ScaledTemplateSetupWorker(QThread):
                 if working_confidences:
                     best_conf = max(working_confidences)
                     self.status_update.emit(f"✅ Template validated! Best confidence: {best_conf}")
-                    self.status_update.emit("🏢 Ready for 25-account enterprise monitoring!")
+                    self.status_update.emit("🏢 Ready for multi-account monitoring!")
                 else:
                     self.status_update.emit("⚠️ Template created but validation inconclusive")
 
                 self.progress_update.emit(100)
                 self.finished_setup.emit(True)
             else:
-                self.status_update.emit("❌ Failed to create enterprise template")
+                self.status_update.emit("❌ Failed to create multi-account template")
                 self.finished_setup.emit(False)
 
         except Exception as e:
-            self.status_update.emit(f"❌ Enterprise setup error: {e}")
+            self.status_update.emit(f"❌ Setup error: {e}")
             self.finished_setup.emit(False)
 
 
 class ScaledMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DeltaMon Enterprise - 25 Account Monitor")
+        self.setWindowTitle("DeltaMon - Multi-Account Monitor")
         self.setGeometry(50, 50, 1200, 800)  # Larger window for more data
 
         self.setStyleSheet(SCALED_DARK_STYLE_SHEET)
@@ -313,7 +313,7 @@ class ScaledMainWindow(QMainWindow):
         # Top row - main buttons
         main_buttons_layout = QHBoxLayout()
 
-        self.setup_template_button = QPushButton("🎯 Setup Enterprise Template")
+        self.setup_template_button = QPushButton("🎯 Setup Template")
         self.setup_template_button.setObjectName("setupButton")
         self.setup_template_button.clicked.connect(self.setup_template)
         main_buttons_layout.addWidget(self.setup_template_button)
@@ -326,7 +326,7 @@ class ScaledMainWindow(QMainWindow):
 
         main_buttons_layout.addSpacing(20)
 
-        self.start_button = QPushButton("🚀 Start Enterprise Monitoring")
+        self.start_button = QPushButton("🚀 Start Monitoring")
         self.start_button.clicked.connect(self.start_monitoring)
         main_buttons_layout.addWidget(self.start_button)
 
@@ -339,7 +339,7 @@ class ScaledMainWindow(QMainWindow):
 
         # Status and alerts
         status_layout = QHBoxLayout()
-        self.overall_status_label = QLabel("Status: Ready for Enterprise Monitoring")
+        self.overall_status_label = QLabel("Status: Ready for Multi-Account Monitoring")
         self.overall_status_label.setObjectName("statusLabel")
         status_layout.addWidget(self.overall_status_label)
 
@@ -385,10 +385,14 @@ class ScaledMainWindow(QMainWindow):
 
     def create_accounts_panel(self):
         """Create the accounts monitoring panel."""
-        accounts_frame = QGroupBox("Account Monitoring (25 Accounts)")
+        accounts_frame = QGroupBox("Account Monitoring")
         accounts_layout = QVBoxLayout(accounts_frame)
 
-        # Accounts table with optimized columns for 25 accounts
+        # Dynamic account count label
+        self.account_count_label = QLabel("No accounts discovered")
+        accounts_layout.addWidget(self.account_count_label)
+
+        # Accounts table with optimized columns
         self.accounts_table = QTableWidget()
         self.accounts_table.setColumnCount(5)
         self.accounts_table.setHorizontalHeaderLabels([
@@ -401,7 +405,7 @@ class ScaledMainWindow(QMainWindow):
         self.accounts_table.setAlternatingRowColors(True)  # Zebra stripes
         self.accounts_table.verticalHeader().setVisible(False)
 
-        # Column sizing for 25 accounts
+        # Column sizing for dynamic account count
         header = self.accounts_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Account name
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Status
@@ -422,7 +426,7 @@ class ScaledMainWindow(QMainWindow):
 
     def create_statistics_panel(self):
         """Create the statistics and monitoring panel."""
-        stats_frame = QGroupBox("Enterprise Statistics & Logs")
+        stats_frame = QGroupBox("Statistics & Logs")
         stats_layout = QVBoxLayout(stats_frame)
 
         # Performance stats
@@ -431,7 +435,7 @@ class ScaledMainWindow(QMainWindow):
         self.total_scans_label = QLabel("0")
         self.success_rate_label = QLabel("0%")
         self.avg_scan_time_label = QLabel("0s")
-        self.accounts_online_label = QLabel("0/25")
+        self.accounts_online_label = QLabel("0/0")
 
         perf_layout.addWidget(QLabel("Total Scans:"), 0, 0)
         perf_layout.addWidget(self.total_scans_label, 0, 1)
@@ -448,7 +452,7 @@ class ScaledMainWindow(QMainWindow):
         self.setup_log = QTextEdit()
         self.setup_log.setMaximumHeight(200)
         self.setup_log.setVisible(False)
-        self.setup_log.setPlaceholderText("Enterprise setup log will appear here...")
+        self.setup_log.setPlaceholderText("Setup log will appear here...")
         stats_layout.addWidget(QLabel("Setup Log:"))
         stats_layout.addWidget(self.setup_log)
 
@@ -463,8 +467,8 @@ class ScaledMainWindow(QMainWindow):
 
     @Slot()
     def setup_template(self):
-        """Start the enterprise template setup process."""
-        print("Enterprise template setup started...")
+        """Start the template setup process."""
+        print("Template setup started...")
 
         # Find ToS window
         tos_hwnd = self.window_manager.find_tos_window()
@@ -490,19 +494,19 @@ class ScaledMainWindow(QMainWindow):
         self.setup_template_button.setEnabled(False)
         self.discover_button.setEnabled(False)
 
-        # Enhanced instructions for 25 accounts
-        QMessageBox.information(self, "Enterprise Template Setup",
-                                "🏢 Enterprise Template Setup for 25 Accounts\n\n"
+        # Instructions for dynamic account count
+        QMessageBox.information(self, "Template Setup",
+                                "🎯 Template Setup for Multi-Account Monitoring\n\n"
                                 "📋 Instructions:\n"
                                 "1. Keep ToS window fully visible and maximized\n"
                                 "2. When prompted, click the account dropdown\n"
-                                "3. IMPORTANT: Ensure ALL 25 accounts are visible in the dropdown\n"
+                                "3. IMPORTANT: Ensure ALL your accounts are visible in the dropdown\n"
                                 "4. If accounts are cut off, the system will detect a larger area\n"
                                 "5. Let the dropdown stay open until capture completes\n\n"
-                                "⚡ This creates an optimized template for fast 25-account scanning!\n\n"
+                                "⚡ This creates an optimized template for your account setup!\n\n"
                                 "Click OK to start!")
 
-        # Start enhanced worker
+        # Start worker
         self.setup_worker = ScaledTemplateSetupWorker(self.tos_navigator)
         self.setup_worker.status_update.connect(self.on_setup_status_update)
         self.setup_worker.progress_update.connect(self.on_setup_progress_update)
@@ -545,7 +549,7 @@ class ScaledMainWindow(QMainWindow):
                     self.add_account_to_table(
                         account_name,
                         "Ready (from dropdown)",
-                        "N/A",  # Delta value 
+                        "N/A",  # Delta value
                         "Never",  # Last check
                         "0"  # Alerts
                     )
@@ -553,8 +557,9 @@ class ScaledMainWindow(QMainWindow):
                     # Store for monitoring
                     self.discovered_accounts.append(account_name)
 
-                # Success summary
+                # Update account count display
                 total_found = len(discovered_account_names)
+                self.account_count_label.setText(f"📊 {total_found} accounts discovered")
                 self.overall_status_label.setText(f"Status: ✅ Found {total_found} accounts from dropdown")
 
                 success_message = f"✅ Dropdown discovery successful! Found {total_found} accounts"
@@ -568,10 +573,11 @@ class ScaledMainWindow(QMainWindow):
                 QMessageBox.information(self, "Discovery Successful",
                                         f"✅ Successfully read {total_found} accounts from dropdown!\n\n"
                                         f"Accounts found:\n{account_list}\n\n"
-                                        f"{'🎉 Perfect for enterprise monitoring!' if total_found >= 20 else '👍 Ready for monitoring!'}")
+                                        f"{'🎉 Great! Ready for monitoring!' if total_found >= 5 else '👍 Ready for monitoring!'}")
 
             else:
                 # Discovery failed
+                self.account_count_label.setText("❌ No accounts discovered")
                 self.overall_status_label.setText("Status: ❌ Dropdown discovery failed")
                 self.log_monitoring_event("❌ Dropdown-based discovery failed")
 
@@ -590,6 +596,7 @@ class ScaledMainWindow(QMainWindow):
         except Exception as e:
             # Handle any errors
             error_msg = f"❌ Discovery error: {e}"
+            self.account_count_label.setText("❌ Discovery error")
             self.overall_status_label.setText("Status: ❌ Discovery error")
             self.log_monitoring_event(error_msg)
 
@@ -603,7 +610,7 @@ class ScaledMainWindow(QMainWindow):
             self.update_button_states()
 
     def add_account_to_table(self, account_name: str, status: str, delta: str, last_check: str, alerts: str):
-        """Add account with all columns for enterprise view."""
+        """Add account with all columns."""
         row_position = self.accounts_table.rowCount()
         self.accounts_table.insertRow(row_position)
         self.accounts_table.setItem(row_position, 0, QTableWidgetItem(account_name))
@@ -634,7 +641,8 @@ class ScaledMainWindow(QMainWindow):
 
         # Count "online" accounts (those with recent successful checks)
         online_accounts = len([acc for acc in self.discovered_accounts if "monitoring" in str(acc).lower()])
-        self.accounts_online_label.setText(f"{online_accounts}/25")
+        total_accounts = len(self.discovered_accounts)
+        self.accounts_online_label.setText(f"{online_accounts}/{total_accounts}")
 
         # Update alert count
         self.alert_count_label.setText(str(self.scan_stats['alerts_today']))
@@ -648,15 +656,20 @@ class ScaledMainWindow(QMainWindow):
 
     @Slot()
     def start_monitoring(self):
-        """Start enterprise monitoring."""
-        if len(self.discovered_accounts) < 25:
-            reply = QMessageBox.question(self, "Partial Account Set",
-                                         f"Only {len(self.discovered_accounts)} accounts discovered.\n"
-                                         f"Pradeep mentioned 25 accounts total.\n\n"
-                                         f"Continue with current accounts?",
-                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if reply == QMessageBox.StandardButton.No:
-                return
+        """Start monitoring."""
+        account_count = len(self.discovered_accounts)
+
+        if account_count == 0:
+            QMessageBox.warning(self, "No Accounts",
+                                "No accounts discovered. Please run account discovery first.")
+            return
+
+        # Confirm start with account count
+        reply = QMessageBox.question(self, "Start Monitoring",
+                                     f"Start monitoring {account_count} discovered accounts?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.No:
+            return
 
         self._monitoring_active = True
         self.update_button_states()
@@ -664,28 +677,28 @@ class ScaledMainWindow(QMainWindow):
         scan_interval = self.scan_interval_spinner.value()
         fast_mode = self.fast_mode_checkbox.isChecked()
 
-        self.overall_status_label.setText(f"Status: 🚀 Monitoring {len(self.discovered_accounts)} accounts")
+        self.overall_status_label.setText(f"Status: 🚀 Monitoring {account_count} accounts")
 
         mode_text = "Fast Mode" if fast_mode else "Standard Mode"
-        self.log_monitoring_event(f"🚀 Started enterprise monitoring - {mode_text}")
+        self.log_monitoring_event(f"🚀 Started monitoring {account_count} accounts - {mode_text}")
         self.log_monitoring_event(f"⚙️ Scan interval: {scan_interval}s")
-        self.log_monitoring_event(f"📊 Expected full cycle time: ~{len(self.discovered_accounts) * 2}s")
+        self.log_monitoring_event(f"📊 Expected full cycle time: ~{account_count * 2}s")
 
     @Slot()
     def stop_monitoring(self):
-        """Stop enterprise monitoring."""
+        """Stop monitoring."""
         self._monitoring_active = False
         self.update_button_states()
         self.overall_status_label.setText("Status: ⏹️ Monitoring stopped")
-        self.log_monitoring_event("⏹️ Enterprise monitoring stopped")
+        self.log_monitoring_event("⏹️ Monitoring stopped")
 
     def update_button_states(self):
-        """Update button states for enterprise scale."""
+        """Update button states."""
         self.start_button.setEnabled(not self._monitoring_active and bool(self.discovered_accounts))
         self.stop_button.setEnabled(self._monitoring_active)
         self.discover_button.setEnabled(not self._monitoring_active)
 
-    # Setup event handlers (same as before)
+    # Setup event handlers
     @Slot(str)
     def on_setup_status_update(self, message):
         self.overall_status_label.setText(f"Setup: {message}")
@@ -706,18 +719,18 @@ class ScaledMainWindow(QMainWindow):
         QTimer.singleShot(3000, lambda: self.setup_progress.setVisible(False))
 
         if success:
-            self.overall_status_label.setText("Setup: ✅ Enterprise template ready!")
-            self.log_monitoring_event("✅ Enterprise template setup completed - Ready for 25 accounts!")
-            QMessageBox.information(self, "Enterprise Setup Complete",
-                                    "✅ Enterprise template setup completed!\n\n"
-                                    "🏢 Optimized for 25-account monitoring\n"
+            self.overall_status_label.setText("Setup: ✅ Template ready!")
+            self.log_monitoring_event("✅ Template setup completed - Ready for account discovery!")
+            QMessageBox.information(self, "Setup Complete",
+                                    "✅ Template setup completed!\n\n"
+                                    "🎯 Optimized for your account setup\n"
                                     "⚡ Enhanced performance and accuracy\n"
-                                    "🎯 Ready for large-scale discovery")
+                                    "📋 Ready for account discovery")
         else:
-            self.overall_status_label.setText("Setup: ❌ Enterprise setup failed")
-            QMessageBox.warning(self, "Enterprise Setup Failed",
-                                "❌ Enterprise template setup failed.\n\n"
+            self.overall_status_label.setText("Setup: ❌ Setup failed")
+            QMessageBox.warning(self, "Setup Failed",
+                                "❌ Template setup failed.\n\n"
                                 "Please ensure:\n"
                                 "• ToS window is maximized and visible\n"
-                                "• All 25 accounts are accessible\n"
+                                "• All accounts are accessible\n"
                                 "• Account dropdown can be clicked")
