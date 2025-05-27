@@ -315,9 +315,11 @@ class ScaledTemplateSetupWorker(QThread):
             for i in range(10, 0, -1):
                 self.status_update.emit(f"👆 Click account dropdown! ({i}s) - Make sure ALL accounts are visible!")
                 time.sleep(1)
-                self.progress_update.emit(45 + i * 3)  # Incorrect progress, should be 45 + (10-i)* (30/10)
-                # Corrected progress: 45 + (10-i) * 3, if we want to reach 75 by the end
-                # self.progress_update.emit(45 + ( (10-i) * ( (80-45) /10.0) ) ) # Spread remaining progress over 10s
+                # Corrected progress calculation:
+                # We want to go from 45 to approx 75-80 during these 10 seconds.
+                # So, a range of 30-35 points over 10 steps.
+                self.progress_update.emit(int(45 + (10 - i) * 3.0))
+
 
             # Capture after state
             self.status_update.emit("📸 Capturing expanded dropdown state...")
@@ -405,7 +407,7 @@ class ScaledMainWindow(QMainWindow):
             'alerts_today': 0
         }
 
-        self.setup_ui_elements()
+        self._setup_ui_elements() # Corrected call
         self.update_button_states()
 
         # Auto-refresh timer for stats
@@ -416,7 +418,28 @@ class ScaledMainWindow(QMainWindow):
         self.overall_status_label.setText("Status: Ready - Click '🔑 Auto-Login ToS' or '✏️ Edit Credentials' to begin")
         self.log_monitoring_event("🚀 DeltaMon ready - Awaiting user action for ToS setup.")
 
-    # ... (setup_ui_elements, create_control_panel, etc. remain largely the same)
+    def _setup_ui_elements(self): # Renamed to indicate it's an internal setup method
+        # === TOP CONTROL PANEL ===
+        control_panel = self.create_control_panel()
+        self.main_layout.addWidget(control_panel)
+
+        # === MAIN CONTENT AREA ===
+        content_splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left side: Accounts and monitoring
+        left_panel = self.create_accounts_panel()
+        content_splitter.addWidget(left_panel)
+
+        # Right side: Statistics and logs
+        right_panel = self.create_statistics_panel()
+        content_splitter.addWidget(right_panel)
+
+        # Set splitter ratios (70% accounts, 30% stats)
+        content_splitter.setSizes([int(self.width() * 0.65), int(self.width() * 0.35)]) # Adjusted for better balance
+
+        self.main_layout.addWidget(content_splitter)
+
+
     def create_control_panel(self):
         """Create the main control panel."""
         control_frame = QGroupBox("Control Panel")
