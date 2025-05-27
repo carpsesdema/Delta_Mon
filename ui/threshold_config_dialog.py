@@ -1,5 +1,3 @@
-# Delta_Mon/ui/threshold_config_dialog.py
-
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QDoubleSpinBox, QLabel, QGroupBox,
@@ -13,9 +11,6 @@ import os
 
 
 class ThresholdConfigDialog(QDialog):
-    """Dialog for configuring alert thresholds and monitoring settings."""
-
-    # Signal emitted when configuration is saved
     config_saved = Signal(dict)
 
     def __init__(self, parent=None, config_file="pradeep_config.ini"):
@@ -24,7 +19,6 @@ class ThresholdConfigDialog(QDialog):
         self.setWindowTitle("⚙️ Configure Alert Settings")
         self.setFixedSize(500, 600)
 
-        # Apply dark theme
         self.setStyleSheet("""
             QDialog {
                 background-color: #2b2b2b;
@@ -90,27 +84,21 @@ class ThresholdConfigDialog(QDialog):
         self.load_current_config()
 
     def setup_ui(self):
-        """Set up the UI layout."""
         layout = QVBoxLayout(self)
 
-        # Create tab widget for organized settings
         tab_widget = QTabWidget()
 
-        # Tab 1: Alert Thresholds
         thresholds_tab = self.create_thresholds_tab()
         tab_widget.addTab(thresholds_tab, "🚨 Alert Thresholds")
 
-        # Tab 2: Monitoring Settings
         monitoring_tab = self.create_monitoring_tab()
         tab_widget.addTab(monitoring_tab, "⚙️ Monitoring")
 
-        # Tab 3: Discord Settings
         discord_tab = self.create_discord_tab()
         tab_widget.addTab(discord_tab, "🔔 Discord")
 
         layout.addWidget(tab_widget)
 
-        # Buttons
         button_layout = QHBoxLayout()
 
         self.test_button = QPushButton("🧪 Test Thresholds")
@@ -132,15 +120,12 @@ class ThresholdConfigDialog(QDialog):
         layout.addLayout(button_layout)
 
     def create_thresholds_tab(self):
-        """Create the alert thresholds configuration tab."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Main thresholds group
         thresholds_group = QGroupBox("🎯 Delta Alert Thresholds")
         thresholds_layout = QFormLayout(thresholds_group)
 
-        # Positive threshold
         self.positive_threshold_spin = QDoubleSpinBox()
         self.positive_threshold_spin.setRange(0.001, 1.0)
         self.positive_threshold_spin.setDecimals(3)
@@ -149,7 +134,6 @@ class ThresholdConfigDialog(QDialog):
         self.positive_threshold_spin.setSuffix("")
         thresholds_layout.addRow("🔥 High Delta Alert (when delta >):", self.positive_threshold_spin)
 
-        # Negative threshold
         self.negative_threshold_spin = QDoubleSpinBox()
         self.negative_threshold_spin.setRange(-1.0, -0.001)
         self.negative_threshold_spin.setDecimals(3)
@@ -160,7 +144,6 @@ class ThresholdConfigDialog(QDialog):
 
         layout.addWidget(thresholds_group)
 
-        # Examples group
         examples_group = QGroupBox("📊 Examples")
         examples_layout = QVBoxLayout(examples_group)
 
@@ -171,11 +154,9 @@ class ThresholdConfigDialog(QDialog):
 
         layout.addWidget(examples_group)
 
-        # Connect signals to update examples
         self.positive_threshold_spin.valueChanged.connect(self.update_examples)
         self.negative_threshold_spin.valueChanged.connect(self.update_examples)
 
-        # Alert behavior group
         behavior_group = QGroupBox("🔔 Alert Behavior")
         behavior_layout = QFormLayout(behavior_group)
 
@@ -195,17 +176,14 @@ class ThresholdConfigDialog(QDialog):
 
         layout.addStretch()
 
-        # Update examples initially
         self.update_examples()
 
         return tab
 
     def create_monitoring_tab(self):
-        """Create the monitoring settings tab."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Scan settings
         scan_group = QGroupBox("⏱️ Scan Settings")
         scan_layout = QFormLayout(scan_group)
 
@@ -229,7 +207,6 @@ class ThresholdConfigDialog(QDialog):
 
         layout.addWidget(scan_group)
 
-        # Delta settings
         delta_group = QGroupBox("📊 Delta Extraction")
         delta_layout = QFormLayout(delta_group)
 
@@ -243,7 +220,6 @@ class ThresholdConfigDialog(QDialog):
 
         layout.addWidget(delta_group)
 
-        # Error handling
         error_group = QGroupBox("⚠️ Error Handling")
         error_layout = QFormLayout(error_group)
 
@@ -265,11 +241,9 @@ class ThresholdConfigDialog(QDialog):
         return tab
 
     def create_discord_tab(self):
-        """Create the Discord settings tab."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Discord webhook
         discord_group = QGroupBox("🔔 Discord Integration")
         discord_layout = QFormLayout(discord_group)
 
@@ -283,7 +257,6 @@ class ThresholdConfigDialog(QDialog):
 
         layout.addWidget(discord_group)
 
-        # Message settings
         message_group = QGroupBox("💬 Message Settings")
         message_layout = QFormLayout(message_group)
 
@@ -301,7 +274,6 @@ class ThresholdConfigDialog(QDialog):
         return tab
 
     def update_examples(self):
-        """Update the examples text based on current threshold values."""
         pos_thresh = self.positive_threshold_spin.value()
         neg_thresh = self.negative_threshold_spin.value()
 
@@ -318,16 +290,15 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
         self.examples_text.setPlainText(examples)
 
     def test_thresholds(self):
-        """Test the current threshold settings."""
         pos_thresh = self.positive_threshold_spin.value()
         neg_thresh = self.negative_threshold_spin.value()
 
         test_values = [
-            pos_thresh + 0.01,  # Should alert (high)
-            pos_thresh - 0.01,  # Should not alert
-            0.0,  # Should not alert
-            neg_thresh + 0.01,  # Should not alert
-            neg_thresh - 0.01,  # Should alert (low)
+            pos_thresh + 0.01,
+            pos_thresh - 0.01,
+            0.0,
+            neg_thresh + 0.01,
+            neg_thresh - 0.01,
         ]
 
         results = []
@@ -346,12 +317,11 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
         QMessageBox.information(self, "Threshold Test", test_text)
 
     def test_discord_webhook(self):
-        """Test the Discord webhook."""
         webhook_url = self.webhook_url_edit.text().strip()
 
         if not webhook_url:
-            QMessageBox.warning(self, "Missing Webhook",
-                                "Please enter a Discord webhook URL first.")
+            QMessageBox.information(self, "Missing Webhook",
+                                    "Please enter a Discord webhook URL first.")
             return
 
         try:
@@ -365,19 +335,18 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
                                         "✅ Discord webhook test successful!\n\n"
                                         "Check your Discord channel for the test message.")
             else:
-                QMessageBox.warning(self, "Webhook Test Failed",
-                                    "❌ Discord webhook test failed.\n\n"
-                                    "Please check:\n"
-                                    "• Webhook URL is correct\n"
-                                    "• Internet connection\n"
-                                    "• Discord server permissions")
+                QMessageBox.information(self, "Webhook Test Failed",
+                                        "❌ Discord webhook test failed.\n\n"
+                                        "Please check:\n"
+                                        "• Webhook URL is correct\n"
+                                        "• Internet connection\n"
+                                        "• Discord server permissions")
 
         except Exception as e:
-            QMessageBox.critical(self, "Webhook Test Error",
-                                 f"❌ Error testing webhook:\n\n{str(e)}")
+            QMessageBox.information(self, "Webhook Test Error",
+                                    f"❌ Error testing webhook:\n\n{str(e)}")
 
     def load_current_config(self):
-        """Load current configuration from file."""
         if not os.path.exists(self.config_file):
             return
 
@@ -385,7 +354,6 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
             config = configparser.ConfigParser()
             config.read(self.config_file)
 
-            # Load thresholds
             if config.has_section('AlertThresholds'):
                 pos_thresh = config.getfloat('AlertThresholds', 'positive_threshold', fallback=0.08)
                 neg_thresh = config.getfloat('AlertThresholds', 'negative_threshold', fallback=-0.05)
@@ -393,7 +361,6 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
                 self.positive_threshold_spin.setValue(pos_thresh)
                 self.negative_threshold_spin.setValue(neg_thresh)
 
-            # Load alert settings
             if config.has_section('AlertSettings'):
                 cooldown = config.getint('AlertSettings', 'alert_cooldown_minutes', fallback=5)
                 max_alerts = config.getint('AlertSettings', 'max_alerts_per_hour', fallback=20)
@@ -404,7 +371,6 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
                 webhook_url = config.get('AlertSettings', 'discord_webhook_url', fallback='')
                 self.webhook_url_edit.setText(webhook_url)
 
-            # Load monitoring settings
             if config.has_section('MonitoringSettings'):
                 scan_interval = config.getint('MonitoringSettings', 'scan_interval_seconds', fallback=45)
                 fast_mode = config.getboolean('MonitoringSettings', 'fast_mode', fallback=False)
@@ -425,22 +391,18 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
             print(f"⚠️ Error loading config: {e}")
 
     def save_config(self):
-        """Save configuration to file."""
         try:
             config = configparser.ConfigParser()
 
-            # If file exists, read it first to preserve other sections
             if os.path.exists(self.config_file):
                 config.read(self.config_file)
 
-            # Alert Thresholds
             if not config.has_section('AlertThresholds'):
                 config.add_section('AlertThresholds')
 
             config.set('AlertThresholds', 'positive_threshold', str(self.positive_threshold_spin.value()))
             config.set('AlertThresholds', 'negative_threshold', str(self.negative_threshold_spin.value()))
 
-            # Alert Settings
             if not config.has_section('AlertSettings'):
                 config.add_section('AlertSettings')
 
@@ -448,7 +410,6 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
             config.set('AlertSettings', 'max_alerts_per_hour', str(self.max_alerts_spin.value()))
             config.set('AlertSettings', 'discord_webhook_url', self.webhook_url_edit.text().strip())
 
-            # Monitoring Settings
             if not config.has_section('MonitoringSettings'):
                 config.add_section('MonitoringSettings')
 
@@ -458,11 +419,9 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
             config.set('MonitoringSettings', 'max_parallel_workers', str(self.max_workers_spin.value()))
             config.set('MonitoringSettings', 'delta_column_name', self.column_name_edit.text().strip())
 
-            # Write to file
             with open(self.config_file, 'w') as f:
                 config.write(f)
 
-            # Emit signal with new config
             config_dict = {
                 'positive_threshold': self.positive_threshold_spin.value(),
                 'negative_threshold': self.negative_threshold_spin.value(),
@@ -485,48 +444,40 @@ Safe zone: {neg_thresh:.3f} < delta < +{pos_thresh:.3f}"""
             self.accept()
 
         except Exception as e:
-            QMessageBox.critical(self, "Save Error",
-                                 f"❌ Error saving configuration:\n\n{str(e)}")
+            QMessageBox.information(self, "Save Error",
+                                    f"❌ Error saving configuration:\n\n{str(e)}")
 
 
-# Simple configuration manager class
 class ConfigurableAlertManager:
-    """Alert manager that can be easily reconfigured."""
 
     def __init__(self, config_file="pradeep_config.ini"):
         self.config_file = config_file
         self.reload_config()
 
     def reload_config(self):
-        """Reload configuration from file."""
         self.config = configparser.ConfigParser()
 
         if os.path.exists(self.config_file):
             self.config.read(self.config_file)
 
-        # Load thresholds
         self.positive_threshold = self.config.getfloat('AlertThresholds', 'positive_threshold', fallback=0.08)
         self.negative_threshold = self.config.getfloat('AlertThresholds', 'negative_threshold', fallback=-0.05)
 
-        # Load other settings
         self.cooldown_minutes = self.config.getint('AlertSettings', 'alert_cooldown_minutes', fallback=5)
         self.webhook_url = self.config.get('AlertSettings', 'discord_webhook_url', fallback='')
 
         print(f"🔧 Config reloaded: +{self.positive_threshold} / {self.negative_threshold}")
 
     def show_config_dialog(self, parent=None):
-        """Show the configuration dialog."""
         dialog = ThresholdConfigDialog(parent, self.config_file)
         dialog.config_saved.connect(self.on_config_saved)
         return dialog.exec()
 
     def on_config_saved(self, config_dict):
-        """Handle configuration save."""
         self.reload_config()
         print(f"✅ Configuration updated: {config_dict}")
 
     def check_threshold(self, account_name: str, delta_value: float) -> tuple:
-        """Check if delta exceeds thresholds."""
         if delta_value > self.positive_threshold:
             return True, "HIGH_DELTA", self.positive_threshold
         elif delta_value < self.negative_threshold:
@@ -535,14 +486,12 @@ class ConfigurableAlertManager:
             return False, "NO_ALERT", None
 
 
-# Example usage
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
 
-    # Test the configuration dialog
     dialog = ThresholdConfigDialog()
 
     if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -551,4 +500,3 @@ if __name__ == "__main__":
         print("Configuration cancelled.")
 
     sys.exit()
-

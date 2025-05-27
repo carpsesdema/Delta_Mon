@@ -1,5 +1,3 @@
-# Delta_Mon/ui/scaled_main_window.py
-
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QAbstractItemView,
@@ -8,7 +6,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QCheckBox, QScrollArea, QFrame, QDialog
 )
 from PySide6.QtCore import Qt, Slot, QTimer, QThread, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 
 import time
 import os
@@ -359,6 +357,12 @@ class ScaledMainWindow(QMainWindow):
         self.setWindowTitle("DeltaMon - Multi-Account Monitor")
         self.setGeometry(50, 50, 1200, 800)
 
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'app_icon.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Warning: Window icon not found at {icon_path}")
+
         self.setStyleSheet(SCALED_DARK_STYLE_SHEET)
 
         self.central_widget = QWidget()
@@ -589,8 +593,8 @@ class ScaledMainWindow(QMainWindow):
         self.log_monitoring_event("✅ Credentials saved/confirmed. Proceeding with auto-login.")
         if not executable_path or not os.path.exists(executable_path):
             self.log_monitoring_event(f"❌ Invalid or missing executable path after dialog: {executable_path}")
-            QMessageBox.critical(self, "Auto-Login Error",
-                                 "A valid ToS executable path is required to proceed with auto-login.")
+            QMessageBox.information(self, "Auto-Login Error",
+                                    "A valid ToS executable path is required to proceed with auto-login.")
             self.overall_status_label.setText("Status: ❌ Executable path missing.")
             return
         self._execute_auto_login(username, password, executable_path)
@@ -598,8 +602,8 @@ class ScaledMainWindow(QMainWindow):
     def _execute_auto_login(self, username: str, password: str, executable_path: str):
         if not executable_path or not os.path.exists(executable_path):
             self.log_monitoring_event(f"❌ Cannot execute auto-login: Invalid ToS executable path: {executable_path}")
-            QMessageBox.critical(self, "Auto-Login Error",
-                                 f"The ToS executable path is invalid or missing:\n{executable_path}\nPlease correct it via '✏️ Edit Credentials'.")
+            QMessageBox.information(self, "Auto-Login Error",
+                                    f"The ToS executable path is invalid or missing:\n{executable_path}\nPlease correct it via '✏️ Edit Credentials'.")
             self.overall_status_label.setText("Status: ❌ Invalid Executable Path.")
             return
         self.log_monitoring_event(f"🚀 Starting AutoLoginWorker with exec: {os.path.basename(executable_path)}")
@@ -656,8 +660,8 @@ class ScaledMainWindow(QMainWindow):
             self.log_monitoring_event("⚠️ ToS HWND not confirmed. Running 'Check Status' first...")
             self.check_tos_status()
             if not self.tos_hwnd:
-                QMessageBox.warning(self, "Setup Prerequisite Failed",
-                                    "Main ToS window could not be confirmed. Please ensure ToS is running and logged in, then try '🔍 Check Status' again before setting up template.")
+                QMessageBox.information(self, "Setup Prerequisite Failed",
+                                        "Main ToS window could not be confirmed. Please ensure ToS is running and logged in, then try '🔍 Check Status' again before setting up template.")
                 self.overall_status_label.setText("Status: Template Setup Failed (ToS Not Ready)")
                 return
             self.log_monitoring_event(f"✅ ToS HWND confirmed: {self.tos_hwnd}. Proceeding with template setup.")
@@ -671,8 +675,8 @@ class ScaledMainWindow(QMainWindow):
 
         if not self.window_manager.focus_tos_window():
             self.log_monitoring_event("⚠️ Could not focus ToS window. Template setup might be unreliable.")
-            QMessageBox.warning(self, "Focus Warning",
-                                "Could not focus the ToS window. Please ensure it's not obstructed and try again. Template setup might be unreliable.")
+            QMessageBox.information(self, "Focus Warning",
+                                    "Could not focus the ToS window. Please ensure it's not obstructed and try again. Template setup might be unreliable.")
         else:
             self.log_monitoring_event("🎯 ToS window focused.")
 
@@ -701,8 +705,8 @@ class ScaledMainWindow(QMainWindow):
             self.setup_worker.start()
         except ValueError as ve:
             self.log_monitoring_event(f"❌ ERROR starting template setup worker: {ve}")
-            QMessageBox.critical(self, "Setup Error",
-                                 f"Could not start template setup: {ve}\nEnsure ToS Navigator is correctly initialized.")
+            QMessageBox.information(self, "Setup Error",
+                                    f"Could not start template setup: {ve}\nEnsure ToS Navigator is correctly initialized.")
             self.update_button_states(tos_ready=bool(self.tos_hwnd))
 
     @Slot()
@@ -715,8 +719,8 @@ class ScaledMainWindow(QMainWindow):
             self.log_monitoring_event("⚠️ ToS HWND not confirmed for discovery. Running 'Check Status' first...")
             self.check_tos_status()
             if not self.tos_hwnd:
-                QMessageBox.warning(self, "Discovery Prerequisite Failed",
-                                    "Main ToS window not confirmed. Please ensure ToS is ready and try '🔍 Check Status' before reading accounts.")
+                QMessageBox.information(self, "Discovery Prerequisite Failed",
+                                        "Main ToS window not confirmed. Please ensure ToS is ready and try '🔍 Check Status' before reading accounts.")
                 self.overall_status_label.setText("Status: Account Discovery Failed (ToS Not Ready)")
                 return
             self.log_monitoring_event(f"✅ ToS HWND confirmed: {self.tos_hwnd} for account discovery.")
@@ -731,8 +735,8 @@ class ScaledMainWindow(QMainWindow):
 
         if not self.window_manager.focus_tos_window():
             self.log_monitoring_event("⚠️ Could not focus ToS window for account discovery. Proceeding with caution.")
-            QMessageBox.warning(self, "Focus Warning",
-                                "Could not focus ToS window. Account discovery might be unreliable. Please ensure ToS is visible.")
+            QMessageBox.information(self, "Focus Warning",
+                                    "Could not focus ToS window. Account discovery might be unreliable. Please ensure ToS is visible.")
         else:
             self.log_monitoring_event("🎯 ToS window focused for account discovery.")
 
@@ -751,7 +755,8 @@ class ScaledMainWindow(QMainWindow):
                 self.log_monitoring_event(f"[Discovery] {message}")
                 QApplication.processEvents()
 
-            discovered_account_names = dropdown_discovery.discover_all_accounts(status_callback=status_update_for_discovery)
+            discovered_account_names = dropdown_discovery.discover_all_accounts(
+                status_callback=status_update_for_discovery)
 
             if discovered_account_names:
                 for account_name in discovered_account_names:
@@ -771,8 +776,8 @@ class ScaledMainWindow(QMainWindow):
                 self.overall_status_label.setText("Status: ❌ Dropdown discovery failed")
                 self.log_monitoring_event(
                     "❌ Dropdown-based discovery failed. Check debug images in assets/captures/dropdown.")
-                QMessageBox.warning(self, "Discovery Failed",
-                                    "❌ Could not read accounts from dropdown.\n\nTroubleshooting:\n• Ensure '🎯 Setup Template' was run successfully.\n• Check ToS: is the dropdown clickable and shows accounts?\n• Review images in 'assets/captures/dropdown_captures/' folder.")
+                QMessageBox.information(self, "Discovery Failed",
+                                        "❌ Could not read accounts from dropdown.\n\nTroubleshooting:\n• Ensure '🎯 Setup Template' was run successfully.\n• Check ToS: is the dropdown clickable and shows accounts?\n• Review images in 'assets/captures/dropdown_captures/' folder.")
         except Exception as e:
             error_msg = f"❌ Discovery error: {e}"
             self.account_count_label.setText("❌ Discovery error")
@@ -780,8 +785,8 @@ class ScaledMainWindow(QMainWindow):
             self.log_monitoring_event(error_msg)
             import traceback
             self.log_monitoring_event(traceback.format_exc())
-            QMessageBox.critical(self, "Discovery Error",
-                                 f"❌ An error occurred during discovery:\n\n{str(e)}\n\nPlease check the logs and debug images.")
+            QMessageBox.information(self, "Discovery Error",
+                                    f"❌ An error occurred during discovery:\n\n{str(e)}\n\nPlease check the logs and debug images.")
         finally:
             self.update_button_states(tos_ready=bool(self.tos_hwnd))
 
@@ -821,7 +826,7 @@ class ScaledMainWindow(QMainWindow):
     def start_monitoring(self):
         account_count = len(self.discovered_accounts)
         if account_count == 0:
-            QMessageBox.warning(self, "No Accounts", "No accounts discovered. Please run '📋 Read Accounts' first.")
+            QMessageBox.information(self, "No Accounts", "No accounts discovered. Please run '📋 Read Accounts' first.")
             return
         reply = QMessageBox.question(self, "Start Monitoring",
                                      f"Start monitoring {account_count} discovered accounts?",
@@ -898,8 +903,8 @@ class ScaledMainWindow(QMainWindow):
             self.overall_status_label.setText("Status: ❌ Auto-login failed. Check logs.")
             self.log_monitoring_event(
                 "❌ Auto-login failed - check credentials, ToS state, or logs in 'Setup Log' panel.")
-            QMessageBox.warning(self, "Auto-Login Failed",
-                                "❌ Auto-login was not successful.\n\nReview the 'Setup Log' panel for details.\nCommon issues:\n• Incorrect credentials (use '✏️ Edit Credentials')\n• ToS login screen changed or unexpected pop-ups\n• Network or ToS server issues\n\nTry manual login, then '🔍 Check Status'.")
+            QMessageBox.information(self, "Auto-Login Failed",
+                                    "❌ Auto-login was not successful.\n\nReview the 'Setup Log' panel for details.\nCommon issues:\n• Incorrect credentials (use '✏️ Edit Credentials')\n• ToS login screen changed or unexpected pop-ups\n• Network or ToS server issues\n\nTry manual login, then '🔍 Check Status'.")
         self.update_button_states(tos_ready=success, login_active=False)
 
     @Slot(str)
@@ -926,6 +931,6 @@ class ScaledMainWindow(QMainWindow):
         else:
             self.overall_status_label.setText("Status: ❌ Template setup failed. Check logs.")
             self.log_monitoring_event("❌ Template setup failed. Review 'Setup Log' panel for details.")
-            QMessageBox.warning(self, "Setup Failed",
-                                "❌ Template setup failed.\n\nReview the 'Setup Log' panel.\nEnsure:\n• ToS window is maximized and visible.\n• You clicked the dropdown when prompted.\n• All accounts were visible in the dropdown.")
+            QMessageBox.information(self, "Setup Failed",
+                                    "❌ Template setup failed.\n\nReview the 'Setup Log' panel.\nEnsure:\n• ToS window is maximized and visible.\n• You clicked the dropdown when prompted.\n• All accounts were visible in the dropdown.")
         self.update_button_states(tos_ready=bool(self.tos_hwnd), setting_up_template=False)
