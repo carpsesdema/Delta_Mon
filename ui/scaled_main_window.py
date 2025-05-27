@@ -15,15 +15,18 @@ import os
 from datetime import datetime
 
 from utils.config_manager import ConfigManager
-from core.enhanced_window_manager import EnhancedWindowManager  # Updated import
+from core.enhanced_window_manager import EnhancedWindowManager
 from core.tos_navigator import TosNavigator
+from utils.credential_manager import CredentialManager
+from utils.tos_launcher import TosLauncher
+from ui.login_dialog import LoginDialog
 
 # Enhanced Dark Theme for larger scale
 SCALED_DARK_STYLE_SHEET = """
     QWidget {
         background-color: #2b2b2b;
         color: #ffffff;
-        font-size: 9pt;  /* Slightly smaller for more data */
+        font-size: 9pt;
     }
     QMainWindow {
         background-color: #2b2b2b;
@@ -68,13 +71,20 @@ SCALED_DARK_STYLE_SHEET = """
     QPushButton#warningButton:hover {
         background-color: #e67e22;
     }
+    QPushButton#successButton {
+        background-color: #27ae60;
+        font-weight: bold;
+    }
+    QPushButton#successButton:hover {
+        background-color: #2ecc71;
+    }
     QTableWidget {
         background-color: #3c3c3c;
         color: #ffffff;
         gridline-color: #5a5a5a;
         border: 1px solid #5a5a5a;
         border-radius: 4px;
-        alternate-background-color: #3a3a3a;  /* Zebra stripes for better readability */
+        alternate-background-color: #3a3a3a;
     }
     QHeaderView::section {
         background-color: #4a4a4a;
@@ -147,6 +157,105 @@ SCALED_DARK_STYLE_SHEET = """
         font-size: 9pt;
     }
 """
+
+
+class AutoLoginWorker(QThread):
+    """Worker thread for automatic ToS login process."""
+
+    status_update = Signal(str)
+    progress_update = Signal(int)
+    login_complete = Signal(bool)
+
+    def __init__(self, username, password, tos_launcher, window_manager):
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.tos_launcher = tos_launcher
+        self.window_manager = window_manager
+
+    def run(self):
+        """Execute the automatic login process."""
+        try:
+            self.status_update.emit("🚀 Starting automatic ToS login...")
+            self.progress_update.emit(10)
+
+            # Check current ToS status
+            status_report = self.window_manager.get_tos_status_report()
+
+            if status_report['main_trading_available']:
+                self.status_update.emit("✅ Main trading window already available!")
+                self.progress_update.emit(100)
+                self.login_complete.emit(True)
+                return
+
+            # If no ToS windows at all, launch ToS
+            if status_report['total_tos_windows'] == 0:
+                self.status_update.emit("🚀 Launching Thinkorswim...")
+                self.progress_update.emit(20)
+
+                launch_success = self.tos_launcher.launch_tos()
+                if not launch_success:
+                    self.status_update.emit("❌ Failed to launch ToS")
+                    self.login_complete.emit(False)
+                    return
+
+                self.status_update.emit("✅ ToS launched, waiting for interface...")
+                time.sleep(5)  # Wait for ToS to start
+                self.progress_update.emit(40)
+
+            # Wait for login window or check if we can proceed
+            self.status_update.emit("⏳ Waiting for ToS to be ready for login...")
+            login_ready = False
+            max_wait_time = 30  # 30 seconds max wait
+            wait_start = time.time()
+
+            while time.time() - wait_start < max_wait_time:
+                status_report = self.window_manager.get_tos_status_report()
+
+                if status_report['main_trading_available']:
+                    self.status_update.emit("✅ Already logged in!")
+                    login_ready = True
+                    break
+                elif status_report['login_required'] or status_report['launcher_open']:
+                    login_ready = True
+                    break
+
+                time.sleep(1)
+                self.progress_update.emit(40 + int((time.time() - wait_start) / max_wait_time * 30))
+
+            if not login_ready:
+                self.status_update.emit("❌ ToS not ready for login within timeout")
+                self.login_complete.emit(False)
+                return
+
+            self.progress_update.emit(70)
+
+            # Attempt login
+            self.status_update.emit("🔑 Attempting automatic login...")
+            login_success = self.tos_launcher.login_to_tos(self.username, self.password)
+
+            if not login_success:
+                self.status_update.emit("❌ Automatic login failed")
+                self.login_complete.emit(False)
+                return
+
+            self.progress_update.emit(85)
+
+            # Wait for main trading window to appear
+            self.status_update.emit("⏳ Waiting for main trading window...")
+            main_window_hwnd = self.window_manager.wait_for_main_trading_window(timeout_seconds=45)
+
+            if main_window_hwnd:
+                self.status_update.emit("✅ Login successful! Main trading window ready")
+                self.progress_update.emit(100)
+                self.login_complete.emit(True)
+            else:
+                self.status_update.emit("❌ Main trading window did not appear")
+                self.login_complete.emit(False)
+
+        except Exception as e:
+            self.status_update.emit(f"❌ Login error: {str(e)}")
+            self.login_complete.emit(False)
 
 
 class ScaledTemplateSetupWorker(QThread):
@@ -270,13 +379,16 @@ class ScaledMainWindow(QMainWindow):
         # State variables
         self._monitoring_active = False
         self.config_manager = ConfigManager()
-        self.window_manager = EnhancedWindowManager(  # Using enhanced version
+        self.window_manager = EnhancedWindowManager(
             main_window_title="Main@thinkorswim [build 1985]",
             exclude_title_substring="DeltaMon"
         )
+        self.credential_manager = CredentialManager()
+        self.tos_launcher = TosLauncher()
         self.tos_navigator = None
         self.discovered_accounts = []
         self.setup_worker = None
+        self.login_worker = None
 
         # Performance tracking
         self.scan_stats = {
@@ -293,6 +405,17 @@ class ScaledMainWindow(QMainWindow):
         self.stats_timer = QTimer()
         self.stats_timer.timeout.connect(self.update_statistics_display)
         self.stats_timer.start(5000)  # Update every 5 seconds
+
+        # Check for auto-login on startup
+        QTimer.singleShot(1000, self.check_startup_auto_login)
+
+    def check_startup_auto_login(self):
+        """Check if we should attempt auto-login on startup."""
+        if self.credential_manager.has_saved_credentials():
+            self.log_monitoring_event("🔑 Saved credentials found - checking ToS status...")
+            self.auto_check_and_login()
+        else:
+            self.log_monitoring_event("ℹ️ No saved credentials - manual setup required")
 
     def setup_ui_elements(self):
         # === TOP CONTROL PANEL ===
@@ -323,8 +446,16 @@ class ScaledMainWindow(QMainWindow):
         # Top row - main buttons
         main_buttons_layout = QHBoxLayout()
 
-        # Check ToS Status button (new)
-        self.check_tos_button = QPushButton("🔍 Check ToS Status")
+        # Auto-Login button (new)
+        self.auto_login_button = QPushButton("🔑 Auto-Login ToS")
+        self.auto_login_button.setObjectName("successButton")
+        self.auto_login_button.clicked.connect(self.start_auto_login)
+        main_buttons_layout.addWidget(self.auto_login_button)
+
+        main_buttons_layout.addSpacing(10)
+
+        # Check ToS Status button
+        self.check_tos_button = QPushButton("🔍 Check Status")
         self.check_tos_button.setObjectName("warningButton")
         self.check_tos_button.clicked.connect(self.check_tos_status)
         main_buttons_layout.addWidget(self.check_tos_button)
@@ -338,7 +469,7 @@ class ScaledMainWindow(QMainWindow):
 
         main_buttons_layout.addSpacing(10)
 
-        self.discover_button = QPushButton("📋 Read Accounts from Dropdown")
+        self.discover_button = QPushButton("📋 Read Accounts")
         self.discover_button.clicked.connect(self.discover_accounts)
         main_buttons_layout.addWidget(self.discover_button)
 
@@ -357,7 +488,7 @@ class ScaledMainWindow(QMainWindow):
 
         # Status and alerts
         status_layout = QHBoxLayout()
-        self.overall_status_label = QLabel("Status: Ready for Multi-Account Monitoring")
+        self.overall_status_label = QLabel("Status: Ready for Auto-Login")
         self.overall_status_label.setObjectName("statusLabel")
         status_layout.addWidget(self.overall_status_label)
 
@@ -484,6 +615,67 @@ class ScaledMainWindow(QMainWindow):
         return stats_frame
 
     @Slot()
+    def start_auto_login(self):
+        """Start the automatic login process."""
+        self.log_monitoring_event("🔑 Starting auto-login process...")
+
+        # Check if we have saved credentials
+        username, password = self.credential_manager.get_credentials()
+
+        if not username or not password:
+            self.log_monitoring_event("❌ No saved credentials found")
+
+            # Show login dialog
+            login_dialog = LoginDialog(self)
+            login_dialog.login_successful.connect(self.on_credentials_saved)
+
+            if login_dialog.exec() == login_dialog.DialogCode.Accepted:
+                # Credentials were saved, now try auto-login
+                username, password = self.credential_manager.get_credentials()
+                if username and password:
+                    self._execute_auto_login(username, password)
+            else:
+                self.log_monitoring_event("❌ Auto-login cancelled")
+
+        else:
+            self.log_monitoring_event("✅ Using saved credentials")
+            self._execute_auto_login(username, password)
+
+    def _execute_auto_login(self, username: str, password: str):
+        """Execute the actual auto-login process."""
+        # Disable login button during process
+        self.auto_login_button.setEnabled(False)
+        self.setup_progress.setVisible(True)
+        self.setup_progress.setValue(0)
+
+        # Start auto-login worker
+        self.login_worker = AutoLoginWorker(username, password, self.tos_launcher, self.window_manager)
+        self.login_worker.status_update.connect(self.on_login_status_update)
+        self.login_worker.progress_update.connect(self.on_login_progress_update)
+        self.login_worker.login_complete.connect(self.on_login_complete)
+        self.login_worker.start()
+
+    def auto_check_and_login(self):
+        """Automatically check ToS status and login if needed."""
+        status_report = self.window_manager.get_tos_status_report()
+
+        if status_report['main_trading_available']:
+            self.log_monitoring_event("✅ ToS already ready - no login needed")
+            self.overall_status_label.setText("Status: ✅ ToS Ready")
+            self.setup_template_button.setEnabled(True)
+            self.discover_button.setEnabled(True)
+        else:
+            self.log_monitoring_event("🔑 ToS not ready - attempting auto-login...")
+            username, password = self.credential_manager.get_credentials()
+            if username and password:
+                QTimer.singleShot(2000, lambda: self._execute_auto_login(username, password))
+
+    @Slot(str, str)
+    def on_credentials_saved(self, username: str, password: str):
+        """Handle when credentials are saved from login dialog."""
+        self.log_monitoring_event("✅ Credentials saved successfully")
+
+    @Slot()
     def check_tos_status(self):
         """Check ToS status and guide user through any issues."""
         print("🔍 Checking ToS status...")
@@ -500,7 +692,7 @@ class ScaledMainWindow(QMainWindow):
             status_message += "🎯 Status: Ready for monitoring!\n\n"
             status_message += "Next steps:\n"
             status_message += "• Click 'Setup Template' (if not done)\n"
-            status_message += "• Click 'Read Accounts from Dropdown'\n"
+            status_message += "• Click 'Read Accounts'\n"
             status_message += "• Start monitoring!"
 
             # Enable buttons since ToS is ready
@@ -511,20 +703,18 @@ class ScaledMainWindow(QMainWindow):
         elif status_report['login_required']:
             status_message += "🔑 Login window detected\n"
             status_message += "⚠️ Status: Login required\n\n"
-            status_message += "Please:\n"
-            status_message += "• Complete login in ToS\n"
-            status_message += "• Wait for main trading window\n"
-            status_message += "• Click 'Check ToS Status' again"
+            status_message += "Options:\n"
+            status_message += "• Click 'Auto-Login ToS' for automatic login\n"
+            status_message += "• Or complete login manually and check status again"
 
             self.overall_status_label.setText("Status: 🔑 Login required")
 
         elif status_report['launcher_open']:
             status_message += "🚀 Launcher window detected\n"
             status_message += "⚠️ Status: Need to open trading platform\n\n"
-            status_message += "Please:\n"
-            status_message += "• Open trading platform from launcher\n"
-            status_message += "• Wait for main window to load\n"
-            status_message += "• Click 'Check ToS Status' again"
+            status_message += "Options:\n"
+            status_message += "• Click 'Auto-Login ToS' for automatic setup\n"
+            status_message += "• Or open trading platform manually and check status again"
 
             self.overall_status_label.setText("Status: 🚀 Open trading platform")
 
@@ -534,21 +724,15 @@ class ScaledMainWindow(QMainWindow):
             status_message += "Possible issues:\n"
             status_message += "• Main window still loading\n"
             status_message += "• Wrong ToS window title\n"
-            status_message += "• ToS needs restart\n\n"
-            status_message += "Try:\n"
-            status_message += "• Wait a moment and check again\n"
-            status_message += "• Restart Thinkorswim completely"
+            status_message += "• Try 'Auto-Login ToS' to restart the process"
 
             self.overall_status_label.setText("Status: ⚠️ ToS loading or issues")
 
         else:
             status_message += "❌ No ToS windows found\n"
             status_message += "❌ Status: Thinkorswim not running\n\n"
-            status_message += "Please:\n"
-            status_message += "• Start Thinkorswim application\n"
-            status_message += "• Complete login process\n"
-            status_message += "• Wait for trading interface to load\n"
-            status_message += "• Click 'Check ToS Status' again"
+            status_message += "Solution:\n"
+            status_message += "• Click 'Auto-Login ToS' to start and login automatically"
 
             self.overall_status_label.setText("Status: ❌ Start Thinkorswim")
 
@@ -569,10 +753,10 @@ class ScaledMainWindow(QMainWindow):
         if not self.window_manager.is_main_trading_window_available():
             reply = QMessageBox.question(self, "ToS Not Ready",
                                          "Main trading window not detected.\n\n"
-                                         "Would you like to check ToS status first?",
+                                         "Would you like to try auto-login first?",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
-                self.check_tos_status()
+                self.start_auto_login()
                 return
 
         # Find ToS window using smart detection
@@ -580,11 +764,7 @@ class ScaledMainWindow(QMainWindow):
         if not tos_hwnd:
             QMessageBox.warning(self, "Setup Failed",
                                 "Could not find usable ToS window.\n\n"
-                                "Please ensure:\n"
-                                "• Thinkorswim is running\n"
-                                "• Main trading window is open\n"
-                                "• Login is completed\n\n"
-                                "Use 'Check ToS Status' for detailed information.")
+                                "Try 'Auto-Login ToS' to ensure proper setup.")
             return
 
         # Focus and initialize
@@ -630,9 +810,12 @@ class ScaledMainWindow(QMainWindow):
 
         # Check ToS status first
         if not self.window_manager.is_main_trading_window_available():
-            QMessageBox.warning(self, "ToS Not Ready",
-                                "Main trading window not available.\n\n"
-                                "Please use 'Check ToS Status' to resolve ToS issues first.")
+            reply = QMessageBox.question(self, "ToS Not Ready",
+                                         "Main trading window not available.\n\n"
+                                         "Would you like to try auto-login first?",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
+                self.start_auto_login()
             return
 
         # Clear existing accounts
@@ -700,15 +883,10 @@ class ScaledMainWindow(QMainWindow):
 
                 QMessageBox.warning(self, "Discovery Failed",
                                     "❌ Could not read accounts from dropdown.\n\n"
-                                    "Possible issues:\n"
-                                    "• Account dropdown not found or not clickable\n"
-                                    "• Dropdown didn't open properly\n"
-                                    "• OCR could not read account names from list\n\n"
                                     "Try:\n"
-                                    "• Use 'Check ToS Status' to verify ToS is ready\n"
+                                    "• Use 'Auto-Login ToS' to ensure proper setup\n"
                                     "• Run 'Setup Template' to improve dropdown detection\n"
-                                    "• Check that account dropdown is in upper-left area\n"
-                                    "• Verify accounts are loaded in ToS")
+                                    "• Check that accounts are loaded in ToS")
 
         except Exception as e:
             # Handle any errors
@@ -814,6 +992,50 @@ class ScaledMainWindow(QMainWindow):
         self.start_button.setEnabled(not self._monitoring_active and bool(self.discovered_accounts))
         self.stop_button.setEnabled(self._monitoring_active)
         self.discover_button.setEnabled(not self._monitoring_active)
+
+    # Auto-login event handlers
+    @Slot(str)
+    def on_login_status_update(self, message):
+        self.overall_status_label.setText(f"Auto-Login: {message}")
+        self.log_monitoring_event(message)
+        QApplication.processEvents()
+
+    @Slot(int)
+    def on_login_progress_update(self, value):
+        self.setup_progress.setValue(value)
+        QApplication.processEvents()
+
+    @Slot(bool)
+    def on_login_complete(self, success):
+        self.auto_login_button.setEnabled(True)
+        QTimer.singleShot(3000, lambda: self.setup_progress.setVisible(False))
+
+        if success:
+            self.overall_status_label.setText("Status: ✅ Auto-Login Complete!")
+            self.log_monitoring_event("✅ Auto-login successful - ToS ready for monitoring!")
+
+            # Enable subsequent buttons
+            self.setup_template_button.setEnabled(True)
+            self.discover_button.setEnabled(True)
+
+            QMessageBox.information(self, "Auto-Login Complete",
+                                    "✅ Auto-login successful!\n\n"
+                                    "🎯 ToS is now ready for monitoring\n"
+                                    "📋 Next: Run account discovery\n"
+                                    "🚀 Then start monitoring!")
+        else:
+            self.overall_status_label.setText("Status: ❌ Auto-login failed")
+            self.log_monitoring_event("❌ Auto-login failed - check credentials or ToS status")
+
+            QMessageBox.warning(self, "Auto-Login Failed",
+                                "❌ Auto-login was not successful.\n\n"
+                                "Possible issues:\n"
+                                "• Incorrect credentials\n"
+                                "• ToS login screen changed\n"
+                                "• Network or ToS server issues\n\n"
+                                "Try:\n"
+                                "• Check credentials in login dialog\n"
+                                "• Manual login and then 'Check Status'")
 
     # Setup event handlers
     @Slot(str)
