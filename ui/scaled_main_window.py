@@ -78,6 +78,13 @@ SCALED_DARK_STYLE_SHEET = """
     QPushButton#successButton:hover {
         background-color: #2ecc71;
     }
+    QPushButton#editButton {
+        background-color: #8e44ad;
+        font-weight: bold;
+    }
+    QPushButton#editButton:hover {
+        background-color: #9b59b6;
+    }
     QTableWidget {
         background-color: #3c3c3c;
         color: #ffffff;
@@ -406,8 +413,12 @@ class ScaledMainWindow(QMainWindow):
         self.stats_timer.timeout.connect(self.update_statistics_display)
         self.stats_timer.start(5000)  # Update every 5 seconds
 
-        # Check for auto-login on startup
-        QTimer.singleShot(1000, self.check_startup_auto_login)
+        # DISABLED: Auto-login on startup - only happens when user clicks the button
+        # QTimer.singleShot(1000, self.check_startup_auto_login)
+
+        # Show ready status instead
+        self.overall_status_label.setText("Status: Ready - Click 'Auto-Login ToS' to begin")
+        self.log_monitoring_event("🚀 DeltaMon ready - manual login required")
 
     def check_startup_auto_login(self):
         """Check if we should attempt auto-login on startup."""
@@ -446,11 +457,17 @@ class ScaledMainWindow(QMainWindow):
         # Top row - main buttons
         main_buttons_layout = QHBoxLayout()
 
-        # Auto-Login button (new)
+        # Auto-Login button
         self.auto_login_button = QPushButton("🔑 Auto-Login ToS")
         self.auto_login_button.setObjectName("successButton")
         self.auto_login_button.clicked.connect(self.start_auto_login)
         main_buttons_layout.addWidget(self.auto_login_button)
+
+        # NEW: Edit Credentials button
+        self.edit_credentials_button = QPushButton("✏️ Edit Credentials")
+        self.edit_credentials_button.setObjectName("editButton")
+        self.edit_credentials_button.clicked.connect(self.edit_credentials)
+        main_buttons_layout.addWidget(self.edit_credentials_button)
 
         main_buttons_layout.addSpacing(10)
 
@@ -613,6 +630,47 @@ class ScaledMainWindow(QMainWindow):
         stats_layout.addWidget(self.monitoring_log)
 
         return stats_frame
+
+    @Slot()
+    def edit_credentials(self):
+        """Edit/update saved credentials."""
+        self.log_monitoring_event("✏️ Opening credential editor...")
+
+        # Get current credentials to populate the dialog
+        current_username, current_password = self.credential_manager.get_credentials()
+
+        # Create and show login dialog
+        login_dialog = LoginDialog(self)
+
+        # Pre-populate with current credentials if they exist
+        if current_username:
+            login_dialog.username_edit.setText(current_username)
+        if current_password:
+            login_dialog.password_edit.setText(current_password)
+
+        # Update dialog title and text for editing
+        login_dialog.setWindowTitle("Edit ToS Credentials")
+
+        # Connect the signal for when credentials are saved
+        login_dialog.login_successful.connect(self.on_credentials_updated)
+
+        # Show the dialog
+        if login_dialog.exec() == login_dialog.DialogCode.Accepted:
+            self.log_monitoring_event("✅ Credentials updated successfully!")
+        else:
+            self.log_monitoring_event("❌ Credential editing cancelled")
+
+    @Slot(str, str)
+    def on_credentials_updated(self, username: str, password: str):
+        """Handle when credentials are updated."""
+        self.log_monitoring_event(f"✅ Credentials updated for user: {username}")
+
+        # Show confirmation
+        QMessageBox.information(self, "Credentials Updated",
+                                f"✅ Login credentials updated successfully!\n\n"
+                                f"Username: {username}\n"
+                                f"Password: {'*' * len(password)}\n\n"
+                                f"Use 'Auto-Login ToS' to test the new credentials.")
 
     @Slot()
     def start_auto_login(self):
