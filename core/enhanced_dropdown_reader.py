@@ -12,8 +12,13 @@ from core.window_manager import WindowManager
 
 
 class EnhancedDropdownReader:
-    def __init__(self, tos_navigator: TosNavigator):
+    FIXED_TRIGGER_BASE_X_RELATIVE = 404
+    FIXED_TRIGGER_BASE_Y_RELATIVE = 16
+    ASSUMED_TRIGGER_HEIGHT = 25
+    CLICK_OFFSET_X_IN_TRIGGER = 20
+    CLICK_OFFSET_Y_IN_TRIGGER = 8
 
+    def __init__(self, tos_navigator: TosNavigator):
         self.tos_navigator = tos_navigator
         self.ocr_utils = OCRUtils()
 
@@ -36,7 +41,7 @@ class EnhancedDropdownReader:
         print("🔍 Reading all accounts from dropdown...")
 
         if not self._click_dropdown_trigger():
-            print("❌ Failed to find/click dropdown trigger")
+            print("❌ Failed to click dropdown trigger")
             return []
 
         print("⏳ Waiting for dropdown to fully expand...")
@@ -55,78 +60,65 @@ class EnhancedDropdownReader:
         return account_names
 
     def _click_dropdown_trigger(self) -> bool:
-        print("🎯 Searching for dropdown trigger...")
+        print("🎯 Clicking dropdown trigger using fixed relative coordinates...")
+        window_rect = self.tos_navigator._get_window_rect()
+        if not window_rect:
+            print("❌ Cannot click dropdown: ToS window rect not found.")
+            return False
 
-        found_coords = self.tos_navigator.find_element_in_upper_left(
-            "account_dropdown_template.png",
-            confidence=0.6,
-            region_width_ratio=self.dropdown_settings['trigger_search_area']['width_ratio'],
-            region_height_ratio=self.dropdown_settings['trigger_search_area']['height_ratio']
-        )
+        win_left, win_top, _, _ = window_rect
 
-        if found_coords:
-            match_x_relative, match_y_relative, template_w, template_h = found_coords
-            window_rect = self.tos_navigator._get_window_rect()
-            if not window_rect:
-                return False
-            win_left, win_top = window_rect[0], window_rect[1]
+        click_x_absolute = win_left + self.FIXED_TRIGGER_BASE_X_RELATIVE + self.CLICK_OFFSET_X_IN_TRIGGER
+        click_y_absolute = win_top + self.FIXED_TRIGGER_BASE_Y_RELATIVE + self.CLICK_OFFSET_Y_IN_TRIGGER
 
-            click_x_absolute = win_left + match_x_relative + template_w // 2
-            click_y_offset_in_template = template_h // 3
-            click_y_absolute = win_top + match_y_relative + click_y_offset_in_template
-
-            print(f"🖱️ Clicking dropdown at: ({click_x_absolute}, {click_y_absolute}) (adjusted Y)")
+        print(f"🖱️ Clicking dropdown at fixed screen coords: ({click_x_absolute}, {click_y_absolute})")
+        try:
             pyautogui.click(click_x_absolute, click_y_absolute)
             return True
-        else:
-            print("❌ Could not find dropdown trigger ('account_dropdown_template.png'). Run 'Setup Template'.")
+        except Exception as e:
+            print(f"❌ Error clicking dropdown at fixed coordinates: {e}")
             return False
 
     def _capture_dropdown_list(self) -> Optional[str]:
+        print("📸 Capturing dropdown list using fixed relative positioning...")
         try:
-            trigger_coords = self.tos_navigator.find_element_in_upper_left(
-                "account_dropdown_template.png",
-                confidence=0.5
-            )
-
-            if not trigger_coords:
-                print("⚠️ Could not relocate dropdown trigger for list capture. Using fallback capture.")
-                return self._capture_dropdown_fallback()
-
             window_rect = self.tos_navigator._get_window_rect()
-            if not window_rect: return None
-            win_left, win_top = window_rect[0], window_rect[1]
-            trigger_x, trigger_y, trigger_w, trigger_h = trigger_coords
+            if not window_rect:
+                print("❌ Cannot capture dropdown list: ToS window rect not found.")
+                return None
 
-            list_x = win_left + trigger_x + self.dropdown_settings['list_capture_area']['offset_x']
-            list_y = win_top + trigger_y + trigger_h + self.dropdown_settings['list_capture_area']['offset_y']
+            win_left, win_top = window_rect[0], window_rect[1]
+
+            list_x_abs = win_left + self.FIXED_TRIGGER_BASE_X_RELATIVE + self.dropdown_settings['list_capture_area'][
+                'offset_x']
+            list_y_abs = win_top + self.FIXED_TRIGGER_BASE_Y_RELATIVE + self.ASSUMED_TRIGGER_HEIGHT + \
+                         self.dropdown_settings['list_capture_area']['offset_y']
+
             list_width = self.dropdown_settings['list_capture_area']['width']
             list_height = self.dropdown_settings['list_capture_area']['height']
 
             screen_width, screen_height = pyautogui.size()
-            list_x = max(0, list_x)
-            list_y = max(0, list_y)
-            list_width = min(list_width, screen_width - list_x)
-            list_height = min(list_height, screen_height - list_y)
+            list_x_abs = max(0, list_x_abs)
+            list_y_abs = max(0, list_y_abs)
+            list_width = min(list_width, screen_width - list_x_abs)
+            list_height = min(list_height, screen_height - list_y_abs)
 
             if list_width <= 0 or list_height <= 0:
                 print(f"❌ Invalid dropdown capture dimensions: W={list_width}, H={list_height}")
                 return self._capture_dropdown_fallback()
 
-            save_dir = os.path.join(self.tos_navigator.captures_path,
-                                    'dropdown_captures')
+            save_dir = os.path.join(self.tos_navigator.captures_path, 'dropdown_captures')
             os.makedirs(save_dir, exist_ok=True)
-
             timestamp = time.strftime("%Y%m%d-%H%M%S")
-            save_path = os.path.join(save_dir, f'dropdown_list_capture_{timestamp}.png')
+            save_path = os.path.join(save_dir, f'dropdown_list_capture_fixed_{timestamp}.png')
 
-            print(f"📸 Capturing dropdown list: {list_width}x{list_height} at ({list_x}, {list_y})")
-            screenshot = pyautogui.screenshot(region=(list_x, list_y, list_width, list_height))
+            print(f"📸 Capturing dropdown list (fixed): {list_width}x{list_height} at ({list_x_abs}, {list_y_abs})")
+            screenshot = pyautogui.screenshot(region=(list_x_abs, list_y_abs, list_width, list_height))
             screenshot.save(save_path)
             print(f"💾 Dropdown list saved: {save_path}")
             return save_path
         except Exception as e:
-            print(f"❌ Error capturing dropdown list: {e}")
+            print(f"❌ Error capturing dropdown list with fixed positioning: {e}")
             return self._capture_dropdown_fallback()
 
     def _capture_dropdown_fallback(self) -> Optional[str]:
