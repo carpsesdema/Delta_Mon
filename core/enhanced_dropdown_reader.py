@@ -8,6 +8,7 @@ import time
 from typing import List, Optional, Tuple, Dict
 from core.tos_navigator import TosNavigator
 from utils.ocr_utils import OCRUtils
+from core.window_manager import WindowManager  # Keep this for the standalone test case
 
 
 class EnhancedDropdownReader:
@@ -18,7 +19,7 @@ class EnhancedDropdownReader:
         Args:
             tos_navigator: TosNavigator instance for window operations
         """
-        self.tos_navigator = tos_navigator
+        self.tos_navigator = tos_navigator  # Use the provided navigator
         self.ocr_utils = OCRUtils()
 
         # Dropdown detection settings optimized for large lists
@@ -86,99 +87,102 @@ class EnhancedDropdownReader:
         )
 
         if found_coords:
-            # Click the dropdown
             match_x_relative, match_y_relative, template_w, template_h = found_coords
-
             window_rect = self.tos_navigator._get_window_rect()
             if not window_rect:
                 return False
-
             win_left, win_top = window_rect[0], window_rect[1]
-
-            # Click center of found template
             click_x_absolute = win_left + match_x_relative + template_w // 2
             click_y_absolute = win_top + match_y_relative + template_h // 2
-
             print(f"🖱️ Clicking dropdown at: ({click_x_absolute}, {click_y_absolute})")
             pyautogui.click(click_x_absolute, click_y_absolute)
             return True
         else:
-            print("❌ Could not find dropdown trigger")
+            print("❌ Could not find dropdown trigger ('account_dropdown_template.png'). Run 'Setup Template'.")
             return False
 
     def _capture_dropdown_list(self) -> Optional[str]:
         """Capture the expanded dropdown list area."""
         try:
-            # Find the dropdown trigger again to get position for relative capture
             trigger_coords = self.tos_navigator.find_element_in_upper_left(
                 "account_dropdown_template.png",
-                confidence=0.5
+                confidence=0.5  # Be a bit lenient finding it again
             )
 
             if not trigger_coords:
-                print("⚠️ Could not relocate dropdown trigger for list capture")
-                # Fallback: capture a larger area where dropdown likely is
+                print("⚠️ Could not relocate dropdown trigger for list capture. Using fallback capture.")
                 return self._capture_dropdown_fallback()
 
             window_rect = self.tos_navigator._get_window_rect()
-            if not window_rect:
-                return None
-
+            if not window_rect: return None
             win_left, win_top = window_rect[0], window_rect[1]
             trigger_x, trigger_y, trigger_w, trigger_h = trigger_coords
 
-            # Calculate dropdown list position (usually appears below trigger)
             list_x = win_left + trigger_x + self.dropdown_settings['list_capture_area']['offset_x']
             list_y = win_top + trigger_y + trigger_h + self.dropdown_settings['list_capture_area']['offset_y']
             list_width = self.dropdown_settings['list_capture_area']['width']
             list_height = self.dropdown_settings['list_capture_area']['height']
 
-            # Ensure we don't go off screen
             screen_width, screen_height = pyautogui.size()
+            list_x = max(0, list_x)  # Ensure not off-screen left
+            list_y = max(0, list_y)  # Ensure not off-screen top
             list_width = min(list_width, screen_width - list_x)
             list_height = min(list_height, screen_height - list_y)
 
-            # Create save directory
-            save_dir = os.path.join(self.tos_navigator.assets_path, 'captures', 'dropdown')
+            if list_width <= 0 or list_height <= 0:
+                print(f"❌ Invalid dropdown capture dimensions: W={list_width}, H={list_height}")
+                return self._capture_dropdown_fallback()
+
+            save_dir = os.path.join(self.tos_navigator.captures_path,
+                                    'dropdown_captures')  # Use navigator's captures_path
             os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, 'dropdown_list_25accounts.png')
+            # More descriptive filename
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            save_path = os.path.join(save_dir, f'dropdown_list_capture_{timestamp}.png')
 
             print(f"📸 Capturing dropdown list: {list_width}x{list_height} at ({list_x}, {list_y})")
             screenshot = pyautogui.screenshot(region=(list_x, list_y, list_width, list_height))
             screenshot.save(save_path)
-
             print(f"💾 Dropdown list saved: {save_path}")
             return save_path
-
         except Exception as e:
             print(f"❌ Error capturing dropdown list: {e}")
-            return None
+            return self._capture_dropdown_fallback()  # Try fallback on any error
 
     def _capture_dropdown_fallback(self) -> Optional[str]:
         """Fallback capture method when trigger can't be relocated."""
+        print(" jatuh kembali menangkap dropdown...")
         try:
             window_rect = self.tos_navigator._get_window_rect()
-            if not window_rect:
-                return None
-
+            if not window_rect: return None
             left, top, right, bottom = window_rect
 
             # Capture upper-left area where dropdown likely appeared
-            capture_width = 400
-            capture_height = 600
-            capture_x = left + 50  # Offset from window edge
-            capture_y = top + 80  # Below title bar
+            # Based on the provided screenshot, the dropdown is in the very upper left.
+            capture_x = left + 10  # Small offset from window edge
+            capture_y = top + 70  # Below typical title bar / account bar area
+            capture_width = 350  # Consistent with desired dropdown width
+            capture_height = 500  # Consistent with desired dropdown height
 
-            save_dir = os.path.join(self.tos_navigator.assets_path, 'captures', 'dropdown')
+            screen_width, screen_height = pyautogui.size()
+            capture_x = max(0, capture_x)
+            capture_y = max(0, capture_y)
+            capture_width = min(capture_width, screen_width - capture_x)
+            capture_height = min(capture_height, screen_height - capture_y)
+
+            if capture_width <= 0 or capture_height <= 0:
+                print(f"❌ Invalid fallback capture dimensions: W={capture_width}, H={capture_height}")
+                return None
+
+            save_dir = os.path.join(self.tos_navigator.captures_path, 'dropdown_captures')
             os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, 'dropdown_list_fallback.png')
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            save_path = os.path.join(save_dir, f'dropdown_list_fallback_{timestamp}.png')
 
-            print(f"📸 Fallback capture: {capture_width}x{capture_height}")
+            print(f"📸 Fallback capture: {capture_width}x{capture_height} at ({capture_x}, {capture_y})")
             screenshot = pyautogui.screenshot(region=(capture_x, capture_y, capture_width, capture_height))
             screenshot.save(save_path)
-
             return save_path
-
         except Exception as e:
             print(f"❌ Fallback capture error: {e}")
             return None
@@ -186,27 +190,18 @@ class EnhancedDropdownReader:
     def _extract_all_account_names(self, dropdown_image_path: str, save_debug: bool = True) -> List[str]:
         """Extract all account names from the dropdown image using enhanced OCR."""
         print("🔬 Extracting account names using enhanced OCR...")
-
         try:
-            # Load the dropdown image
             dropdown_image = cv2.imread(dropdown_image_path)
             if dropdown_image is None:
                 print(f"❌ Could not load dropdown image: {dropdown_image_path}")
                 return []
-
             print(f"📊 Dropdown image size: {dropdown_image.shape[1]}x{dropdown_image.shape[0]}")
 
-            # Method 1: Direct OCR on full image
             accounts_method1 = self._extract_accounts_direct_ocr(dropdown_image, dropdown_image_path, save_debug)
-
-            # Method 2: Line-by-line analysis
             accounts_method2 = self._extract_accounts_line_by_line(dropdown_image, dropdown_image_path, save_debug)
-
-            # Method 3: Enhanced preprocessing + OCR
             accounts_method3 = self._extract_accounts_enhanced_preprocessing(dropdown_image, dropdown_image_path,
                                                                              save_debug)
 
-            # Combine and deduplicate results
             all_accounts = accounts_method1 + accounts_method2 + accounts_method3
             unique_accounts = self._deduplicate_and_clean_accounts(all_accounts)
 
@@ -215,250 +210,255 @@ class EnhancedDropdownReader:
             print(f"   Method 2 (Line-by-line): {len(accounts_method2)} accounts")
             print(f"   Method 3 (Enhanced): {len(accounts_method3)} accounts")
             print(f"   Final unique accounts: {len(unique_accounts)}")
-
             return unique_accounts
-
         except Exception as e:
             print(f"❌ Error extracting account names: {e}")
             return []
 
-    def _extract_accounts_direct_ocr(self, dropdown_image: np.ndarray,
-                                     image_path: str, save_debug: bool) -> List[str]:
-        """Method 1: Direct OCR on the full dropdown image."""
+    def _extract_accounts_direct_ocr(self, dropdown_image: np.ndarray, image_path: str, save_debug: bool) -> List[str]:
         try:
             print("🔍 Method 1: Direct OCR...")
+            # Create a temporary path for OCRUtils to process, as it expects a path
+            base_name = os.path.basename(image_path)
+            temp_ocr_image_path = os.path.join(os.path.dirname(image_path), f"temp_direct_{base_name}")
+            cv2.imwrite(temp_ocr_image_path, dropdown_image)
 
-            # Use the existing OCR utility
-            accounts = self.ocr_utils.extract_account_names(image_path, debug_save=save_debug)
+            accounts = self.ocr_utils.extract_account_names(temp_ocr_image_path, debug_save=save_debug)
+
+            try:
+                os.remove(temp_ocr_image_path)
+            except:
+                pass
 
             print(f"   Found {len(accounts)} accounts via direct OCR")
             return accounts
-
         except Exception as e:
             print(f"   ❌ Direct OCR error: {e}")
             return []
 
-    def _extract_accounts_line_by_line(self, dropdown_image: np.ndarray,
-                                       image_path: str, save_debug: bool) -> List[str]:
-        """Method 2: Analyze dropdown line by line to extract individual accounts."""
+    def _extract_accounts_line_by_line(self, dropdown_image: np.ndarray, image_path: str, save_debug: bool) -> List[
+        str]:
         try:
             print("🔍 Method 2: Line-by-line analysis...")
-
-            # Convert to grayscale
             gray = cv2.cvtColor(dropdown_image, cv2.COLOR_BGR2GRAY)
             height, width = gray.shape
 
-            # Find horizontal lines/separators that might divide accounts
-            horizontal_projection = np.sum(gray, axis=1)  # Sum across each row
+            # Improved line detection - adaptive thresholding and morphological ops
+            # This helps in varying background/text colors in dropdowns
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
 
-            # Smooth the projection to reduce noise
-            from scipy import ndimage
-            smoothed = ndimage.gaussian_filter1d(horizontal_projection, sigma=1)
+            # Detect horizontal lines to segment rows
+            horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT,
+                                                          (width // 2, 1))  # Kernel to detect long horizontal lines
+            detected_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, horizontal_kernel, iterations=2)
 
-            # Find potential line separators (darker horizontal lines)
-            line_threshold = np.mean(smoothed) * 0.9
-            potential_lines = []
+            contours, _ = cv2.findContours(detected_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            for i in range(1, len(smoothed) - 1):
-                if smoothed[i] < line_threshold:
-                    potential_lines.append(i)
+            # Get y-coordinates of rows based on detected lines or row-like structures
+            # This part needs to be robust. For now, a simplified approach if lines are not clear:
+            # Estimate row height if contours are not reliable.
+            # For Pradeep's case, items are well separated. Let's try a simpler projection.
 
-            # Group consecutive line pixels into single separators
-            separators = []
-            if potential_lines:
-                current_group = [potential_lines[0]]
-                for line in potential_lines[1:]:
-                    if line - current_group[-1] <= 3:  # Close together
-                        current_group.append(line)
-                    else:
-                        separators.append(int(np.mean(current_group)))
-                        current_group = [line]
-                separators.append(int(np.mean(current_group)))
+            # Horizontal projection sum
+            h_projection = np.sum(gray, axis=1)  # Sum pixels across rows
 
-            # Extract text from regions between separators
+            # Find gaps (low sum) between text lines (high sum)
+            # This is a simplified segmentation; more advanced methods exist
+            from scipy.signal import find_peaks
+            # Invert projection to find valleys (gaps) as peaks
+            inverted_projection = np.max(h_projection) - h_projection
+            peaks, _ = find_peaks(inverted_projection, height=np.mean(inverted_projection),
+                                  distance=10)  # distance is min px between rows
+
             accounts = []
-            if separators:
-                regions = []
-                prev_y = 0
-                for sep_y in separators:
-                    if sep_y - prev_y > 15:  # Minimum height for text
-                        regions.append((prev_y, sep_y))
-                    prev_y = sep_y + 1
+            start_y = 0
+            debug_dir = os.path.join(os.path.dirname(image_path), 'line_analysis_debug')
+            if save_debug: os.makedirs(debug_dir, exist_ok=True)
 
-                # Add final region
-                if height - prev_y > 15:
-                    regions.append((prev_y, height))
+            row_regions_y = []
+            if len(peaks) > 0:
+                row_regions_y.append(0)  # Start of first item
+                for p in peaks:
+                    row_regions_y.append(p)
+                row_regions_y.append(height)  # End of last item
+            else:  # Fallback if no clear peaks - treat whole image as one block
+                row_regions_y = [0, height]
 
-                # Extract text from each region
-                for i, (start_y, end_y) in enumerate(regions):
-                    region = gray[start_y:end_y, :]
+            for i in range(len(row_regions_y) - 1):
+                y1, y2 = row_regions_y[i], row_regions_y[i + 1]
+                if y2 - y1 < 8: continue  # Skip very small regions
 
-                    if save_debug:
-                        debug_dir = os.path.join(os.path.dirname(image_path), 'line_analysis')
-                        os.makedirs(debug_dir, exist_ok=True)
-                        region_path = os.path.join(debug_dir, f'region_{i:02d}.png')
-                        cv2.imwrite(region_path, region)
+                region_image = dropdown_image[y1:y2, :]
 
-                    # OCR on this region
-                    temp_path = os.path.join(os.path.dirname(image_path), f'temp_region_{i}.png')
-                    cv2.imwrite(temp_path, region)
+                temp_region_path = os.path.join(debug_dir, f"region_{i:02d}.png")
+                if save_debug:
+                    cv2.imwrite(temp_region_path, region_image)
+                else:  # Need to save temporarily anyway for OCR if not debugging
+                    temp_dir_for_ocr = os.path.join(self.tos_navigator.captures_path, "temp_ocr")
+                    os.makedirs(temp_dir_for_ocr, exist_ok=True)
+                    temp_region_path = os.path.join(temp_dir_for_ocr, f"temp_ocr_region_{i}.png")
+                    cv2.imwrite(temp_region_path, region_image)
 
-                    region_accounts = self.ocr_utils.extract_account_names(temp_path, debug_save=False)
-                    accounts.extend(region_accounts)
+                region_accounts = self.ocr_utils.extract_account_names(temp_region_path,
+                                                                       debug_save=False)  # Debug already saved if needed
+                accounts.extend(region_accounts)
 
-                    # Clean up temp file
+                if not save_debug and os.path.exists(temp_region_path) and "temp_ocr_region" in temp_region_path:
                     try:
-                        os.remove(temp_path)
+                        os.remove(temp_region_path)
                     except:
                         pass
 
-            print(f"   Found {len(accounts)} accounts via line-by-line analysis")
+            print(f"   Found {len(accounts)} potential accounts via line-by-line analysis")
             return accounts
-
         except Exception as e:
             print(f"   ❌ Line-by-line analysis error: {e}")
+            import traceback
+            print(traceback.format_exc())
             return []
 
-    def _extract_accounts_enhanced_preprocessing(self, dropdown_image: np.ndarray,
-                                                 image_path: str, save_debug: bool) -> List[str]:
-        """Method 3: Enhanced preprocessing for better OCR results."""
+    def _extract_accounts_enhanced_preprocessing(self, dropdown_image: np.ndarray, image_path: str, save_debug: bool) -> \
+    List[str]:
         try:
             print("🔍 Method 3: Enhanced preprocessing...")
-
-            # Convert to grayscale
             gray = cv2.cvtColor(dropdown_image, cv2.COLOR_BGR2GRAY)
 
-            # Resize for better OCR (OCR works better on larger text)
-            scale_factor = 2.0
-            new_width = int(gray.shape[1] * scale_factor)
-            new_height = int(gray.shape[0] * scale_factor)
-            resized = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+            # Adaptive thresholding is often good for text
+            # Using THRESH_BINARY_INV because OCR often prefers white text on black, or Tesseract handles it.
+            # Let's try simple OTSU first, then adaptive.
+            _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-            # Enhanced contrast
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(resized)
+            # If background is dark, text is light. OCR might prefer black text on white.
+            # If mean is high (mostly white), invert it.
+            if np.mean(th) > 128:
+                th = cv2.bitwise_not(th)  # Invert to black text on white
 
-            # Gaussian blur to smooth text
-            blurred = cv2.GaussianBlur(enhanced, (1, 1), 0)
-
-            # Adaptive threshold for varying lighting
-            adaptive_thresh = cv2.adaptiveThreshold(
-                blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-            )
-
-            # Morphological operations to clean text
+            # Dilation and erosion to remove noise
             kernel = np.ones((1, 1), np.uint8)
-            cleaned = cv2.morphologyEx(adaptive_thresh, cv2.MORPH_CLOSE, kernel)
+            cleaned = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel)  # Open to remove small noise
+            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)  # Close to fill gaps in text
 
-            # Save enhanced image
+            temp_enhanced_path = ""
             if save_debug:
-                debug_path = image_path.replace('.png', '_enhanced.png')
+                debug_path = image_path.replace('.png', '_enhanced_method3.png')
                 cv2.imwrite(debug_path, cleaned)
-                print(f"   Enhanced image saved: {debug_path}")
-
-            # OCR on enhanced image
-            temp_enhanced_path = image_path.replace('.png', '_temp_enhanced.png')
-            cv2.imwrite(temp_enhanced_path, cleaned)
+                print(f"   Enhanced image (Method 3) saved: {debug_path}")
+                temp_enhanced_path = debug_path
+            else:
+                temp_dir_for_ocr = os.path.join(self.tos_navigator.captures_path, "temp_ocr")
+                os.makedirs(temp_dir_for_ocr, exist_ok=True)
+                temp_enhanced_path = os.path.join(temp_dir_for_ocr, f"temp_ocr_enhanced_{os.path.basename(image_path)}")
+                cv2.imwrite(temp_enhanced_path, cleaned)
 
             accounts = self.ocr_utils.extract_account_names(temp_enhanced_path, debug_save=False)
 
-            # Clean up
-            try:
-                os.remove(temp_enhanced_path)
-            except:
-                pass
+            if not save_debug and os.path.exists(temp_enhanced_path) and "temp_ocr_enhanced" in temp_enhanced_path:
+                try:
+                    os.remove(temp_enhanced_path)
+                except:
+                    pass
 
             print(f"   Found {len(accounts)} accounts via enhanced preprocessing")
             return accounts
-
         except Exception as e:
             print(f"   ❌ Enhanced preprocessing error: {e}")
             return []
 
     def _deduplicate_and_clean_accounts(self, all_accounts: List[str]) -> List[str]:
-        """Remove duplicates and clean up account names."""
         print("🧹 Deduplicating and cleaning account names...")
-
         seen = set()
         unique_accounts = []
-
         for account in all_accounts:
-            if not account or len(account.strip()) < 2:
-                continue
-
-            # Clean the account name
+            if not account or len(account.strip()) < 2: continue
             cleaned = self._clean_account_name(account)
-
             if cleaned and cleaned not in seen:
-                seen.add(cleaned)
-                unique_accounts.append(cleaned)
+                # Further check for very similar names (e.g. OCR artifacts like trailing chars)
+                is_too_similar = False
+                for existing_acc in seen:
+                    # Using a simple similarity check (e.g. if one is a substring of other and close in length)
+                    if (cleaned in existing_acc or existing_acc in cleaned) and \
+                            abs(len(cleaned) - len(existing_acc)) < 3:
+                        # Prefer the shorter one if one is substring of other, or the one already seen.
+                        # This is a basic heuristic. More advanced: Levenshtein distance.
+                        if len(cleaned) >= len(existing_acc):  # Current is longer or same, prefer existing
+                            is_too_similar = True
+                            break
+                        else:  # Current is shorter, replace existing if it's very similar
+                            seen.remove(existing_acc)
+                            # find and remove from unique_accounts list
+                            try:
+                                unique_accounts.remove(existing_acc)
+                            except ValueError:
+                                pass  # Should not happen if logic is correct
+                            break  # Add the new shorter one
 
-        # Sort for consistent ordering
+                if not is_too_similar:
+                    seen.add(cleaned)
+                    unique_accounts.append(cleaned)
         unique_accounts.sort()
-
         print(f"   Cleaned and deduplicated: {len(unique_accounts)} unique accounts")
         return unique_accounts
 
     def _clean_account_name(self, raw_name: str) -> Optional[str]:
-        """Clean and validate an account name."""
         import re
-
-        # Basic cleaning
         cleaned = raw_name.strip()
+        # Remove common OCR artifacts like leading/trailing junk, vertical bars, etc.
+        cleaned = re.sub(r'^[^a-zA-Z0-9\(@-]+', '', cleaned)  # Remove leading non-alphanumeric (keep @, (), -)
+        cleaned = re.sub(r'[^a-zA-Z0-9\s_@().-]+$', '', cleaned)  # Remove trailing
+        cleaned = re.sub(r'[|/\\]+', '', cleaned)  # Remove | / \
+        cleaned = re.sub(r'\s{2,}', ' ', cleaned)  # Multiple spaces to one
 
-        # Remove common OCR artifacts
-        cleaned = re.sub(r'[|\\\/]+', '', cleaned)
-        cleaned = re.sub(r'[^\w@.-]', '', cleaned)  # Keep only safe characters
-        cleaned = re.sub(r'^[^a-zA-Z0-9]+', '', cleaned)  # Remove leading junk
+        # More aggressive cleaning of non-alphanumeric chars if they are not typical for account names
+        # This needs to be balanced. For now, let's be somewhat conservative.
+        # cleaned = re.sub(r'[^\w\s@().-]', '', cleaned) # \w includes underscore
 
-        # Validate length
-        if len(cleaned) < 2 or len(cleaned) > 50:
-            return None
+        if len(cleaned) < 3 or len(cleaned) > 50: return None  # Typical length constraints
+        if not re.search(r'[a-zA-Z0-9]', cleaned): return None  # Must contain some alpha-numeric
 
-        # Must contain some alphanumeric
-        if not re.search(r'[a-zA-Z0-9]', cleaned):
-            return None
+        # Specific ToS pattern cleaning (e.g., "(Individual)" might be noisy)
+        # This is optional and depends on how clean you want the names
+        # cleaned = re.sub(r'\s*\(Individual\)\s*$', '', cleaned, flags=re.IGNORECASE).strip()
+        # cleaned = re.sub(r'\s*\(IRA\)\s*$', '', cleaned, flags=re.IGNORECASE).strip()
 
         return cleaned
 
     def _close_dropdown(self):
         """Close the dropdown by clicking elsewhere."""
         try:
-            # Click somewhere safe to close dropdown
-            window_rect = self.tos_navigator._get_window_rect()
-            if window_rect:
-                # Click in the center-right area of the window
-                center_x = window_rect[0] + (window_rect[2] - window_rect[0]) * 0.7
-                center_y = window_rect[1] + (window_rect[3] - window_rect[1]) * 0.5
-
-                pyautogui.click(center_x, center_y)
-                time.sleep(0.5)
-                print("🖱️ Clicked to close dropdown")
+            self.tos_navigator.click_somewhere_else_to_close_dropdown()
+            print("🖱️ Clicked to close dropdown")
         except Exception as e:
             print(f"⚠️ Could not close dropdown: {e}")
 
 
-# Integration class for easy use
 class DropdownAccountDiscovery:
-    def __init__(self):
+    def __init__(self, tos_navigator: Optional[TosNavigator] = None):  # Accept optional TosNavigator
         """Initialize dropdown-based account discovery."""
-        from core.window_manager import WindowManager
+        if tos_navigator:
+            self.tos_navigator = tos_navigator
+        else:
+            # This block is for standalone testing or if a navigator isn't provided externally
+            print("ℹ️ DropdownAccountDiscovery creating its own WindowManager and TosNavigator.")
+            self.window_manager = WindowManager(
+                target_exact_title="Main@thinkorswim [build 1985]",
+                exclude_title_substring="DeltaMon"
+            )
+            tos_hwnd = self.window_manager.find_tos_window()
+            if not tos_hwnd:
+                raise RuntimeError(
+                    "ToS window not found. Cannot initialize DropdownAccountDiscovery without a valid ToS window.")
+            if not self.window_manager.focus_tos_window():
+                print("⚠️ Warning: Could not focus ToS window during DropdownAccountDiscovery init.")
+            self.tos_navigator = TosNavigator(tos_hwnd)
 
-        self.window_manager = WindowManager(
-            target_exact_title="Main@thinkorswim [build 1985]",
-            exclude_title_substring="DeltaMon"
-        )
-        self.tos_navigator = None
-        self.dropdown_reader = None
+        self.dropdown_reader = EnhancedDropdownReader(self.tos_navigator)
         self.discovered_accounts = []
 
     def discover_all_accounts(self, status_callback=None) -> List[str]:
         """
         Discover all accounts from the dropdown.
-
         Args:
             status_callback: Optional callback for status updates
-
         Returns:
             List of discovered account names
         """
@@ -471,38 +471,31 @@ class DropdownAccountDiscovery:
         try:
             update_status("🔍 Starting dropdown account discovery...")
 
-            # Find ToS window
-            update_status("📍 Locating ToS window...")
-            tos_hwnd = self.window_manager.find_tos_window()
-            if not tos_hwnd:
-                update_status("❌ ToS window not found")
+            # Ensure ToS window is focused (if navigator was provided, this should be handled by caller)
+            # If navigator was created internally, focus was attempted in __init__
+            if not self.tos_navigator.hwnd:  # Should not happen if init was successful
+                update_status("❌ ToS Navigator has no valid HWND.")
                 return []
 
-            # Focus window
-            update_status("🎯 Focusing ToS window...")
-            if not self.window_manager.focus_tos_window():
-                update_status("⚠️ Warning: Could not focus ToS window")
+            # Check if main trading window is available - this is a good sanity check
+            if not self.tos_navigator._get_window_rect():  # A simple check if window is valid
+                update_status("❌ ToS window seems to be unavailable or minimized.")
+                return []
 
-            # Initialize components
-            update_status("🔧 Initializing dropdown reader...")
-            self.tos_navigator = TosNavigator(tos_hwnd)
-            self.dropdown_reader = EnhancedDropdownReader(self.tos_navigator)
-
-            # Read accounts from dropdown
-            update_status("📖 Reading accounts from dropdown...")
-            self.discovered_accounts = self.dropdown_reader.read_all_accounts_from_dropdown()
+            update_status("📖 Reading accounts from dropdown using EnhancedDropdownReader...")
+            self.discovered_accounts = self.dropdown_reader.read_all_accounts_from_dropdown(save_debug=True)
 
             if self.discovered_accounts:
                 update_status(f"✅ Successfully discovered {len(self.discovered_accounts)} accounts!")
                 for i, account in enumerate(self.discovered_accounts, 1):
                     update_status(f"   {i:2d}. {account}")
             else:
-                update_status("❌ No accounts found in dropdown")
-
+                update_status("❌ No accounts found in dropdown by EnhancedDropdownReader.")
             return self.discovered_accounts
-
         except Exception as e:
             update_status(f"❌ Discovery error: {e}")
+            import traceback
+            update_status(traceback.format_exc())
             return []
 
     def get_discovered_accounts(self) -> List[str]:
@@ -512,15 +505,23 @@ class DropdownAccountDiscovery:
 
 # Test function
 if __name__ == "__main__":
-    print("Enhanced Dropdown Reader Test")
+    print("Enhanced Dropdown Reader - Standalone Test")
     print("=" * 40)
+    print("ENSURE TOS IS RUNNING AND THE MAIN WINDOW IS ACTIVE BEFORE STARTING.")
+    input("Press Enter to begin test...")
 
-    discovery = DropdownAccountDiscovery()
-    accounts = discovery.discover_all_accounts()
+    try:
+        discovery = DropdownAccountDiscovery()  # Will create its own navigator for this test
+        accounts = discovery.discover_all_accounts()
 
-    if accounts:
-        print(f"\n✅ SUCCESS! Found {len(accounts)} accounts:")
-        for i, account in enumerate(accounts, 1):
-            print(f"   {i:2d}. {account}")
-    else:
-        print("\n❌ No accounts found")
+        if accounts:
+            print(f"\n✅ SUCCESS! Found {len(accounts)} accounts:")
+            for i, account in enumerate(accounts, 1):
+                print(f"   {i:2d}. {account}")
+        else:
+            print("\n❌ No accounts found or an error occurred.")
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR during test: {e}")
+        import traceback
+
+        print(traceback.format_exc())
