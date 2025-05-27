@@ -52,7 +52,7 @@ class DeltaMonBuilder:
         # Application details
         self.app_name = "DeltaMon"
         self.main_script = "main.py"
-        self.icon_file = "app_icon.ico"
+        self.icon_file = "assets/app_icon.ico"
 
         print(f"🚀 DeltaMon Builder")
         print(f"📁 Project root: {self.project_root}")
@@ -145,71 +145,84 @@ class DeltaMonBuilder:
         except ImportError:
             raise BuildError("PyInstaller is not installed. Run: pip install pyinstaller")
 
-        # Check for icon file
-        icon_path = self.project_root / self.icon_file
-        if not icon_path.exists():
-            print(f"⚠️  Warning: Icon file not found: {icon_path}")
-            icon_path = None
-
-        # PyInstaller command
-        cmd = [
-            sys.executable, "-m", "PyInstaller",
-            "--onefile",
-            "--windowed",
-            "--name", exe_name,
-            "--distpath", str(self.dist_dir),
-            "--workpath", str(self.build_dir),
-            "--specpath", str(self.build_dir),
-            "--clean",
-            "--noconsole",
-        ]
-
-        # Add icon if available
-        if icon_path:
-            cmd.extend(["--icon", str(icon_path)])
-            print(f"   Using icon: {icon_path}")
-
-        # Add data files - Include the entire tesseract folder
-        cmd.extend(["--add-data", f"tesseract{os.pathsep}tesseract"])
-
-        # Add assets folder if it exists
-        assets_dir = self.project_root / "assets"
-        if assets_dir.exists():
-            cmd.extend(["--add-data", f"assets{os.pathsep}assets"])
-            print("   Including assets folder")
-
-        # Hidden imports for DeltaMon
-        hidden_imports = [
-            "PySide6.QtCore",
-            "PySide6.QtWidgets",
-            "PySide6.QtGui",
-            "cv2",
-            "numpy",
-            "pyautogui",
-            "pywin32",
-            "win32gui",
-            "win32con",
-            "win32api",
-            "pytesseract",
-            "requests",
-            "configparser",
-            "keyring",
-            "cryptography",
-        ]
-
-        for imp in hidden_imports:
-            cmd.extend(["--hidden-import", imp])
-
-        # Add the main script
-        main_file = self.project_root / self.main_script
-        if not main_file.exists():
-            raise BuildError(f"Main script not found: {main_file}")
-
-        cmd.append(str(main_file))
+        # ENSURE WE'RE IN THE PROJECT ROOT
+        original_cwd = os.getcwd()
+        os.chdir(str(self.project_root))
 
         try:
+            # Check for icon file
+            icon_path = self.project_root / self.icon_file
+            if not icon_path.exists():
+                print(f"⚠️  Warning: Icon file not found: {icon_path}")
+                icon_path = None
+
+            # PyInstaller command
+            cmd = [
+                sys.executable, "-m", "PyInstaller",
+                "--onefile",
+                "--windowed",
+                "--name", exe_name,
+                "--distpath", str(self.dist_dir),
+                "--workpath", str(self.build_dir),
+                "--specpath", str(self.build_dir),
+                "--clean",
+                "--noconsole",
+            ]
+
+            # Add icon if available
+            if icon_path:
+                cmd.extend(["--icon", str(icon_path)])
+                print(f"   Using icon: {icon_path}")
+
+            # Add data files - Use ABSOLUTE PATHS
+            tesseract_source = self.project_root / "tesseract"
+            if tesseract_source.exists():
+                cmd.extend(["--add-data", f"{tesseract_source}{os.pathsep}tesseract"])
+                print(f"   Including Tesseract from: {tesseract_source}")
+            else:
+                raise BuildError(f"Tesseract folder not found at: {tesseract_source}")
+
+            # Add assets folder if it exists
+            assets_source = self.project_root / "assets"
+            if assets_source.exists():
+                cmd.extend(["--add-data", f"{assets_source}{os.pathsep}assets"])
+                print(f"   Including assets from: {assets_source}")
+
+            # Hidden imports for DeltaMon
+            hidden_imports = [
+                "PySide6.QtCore",
+                "PySide6.QtWidgets",
+                "PySide6.QtGui",
+                "cv2",
+                "numpy",
+                "pyautogui",
+                "pywin32",
+                "win32gui",
+                "win32con",
+                "win32api",
+                "pytesseract",
+                "requests",
+                "configparser",
+                "keyring",
+                "cryptography",
+            ]
+
+            for imp in hidden_imports:
+                cmd.extend(["--hidden-import", imp])
+
+            # Add the main script
+            main_file = self.project_root / self.main_script
+            if not main_file.exists():
+                raise BuildError(f"Main script not found: {main_file}")
+
+            cmd.append(str(main_file))
+
             print(f"   Building executable with bundled Tesseract...")
             print(f"   This may take a few minutes...")
+
+            # DEBUG: Print the actual command being run
+            print(f"   Command: {' '.join(cmd)}")
+
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
 
             exe_path = self.dist_dir / f"{exe_name}.exe"
@@ -232,6 +245,10 @@ class DeltaMonBuilder:
             print(f"   Output: {e.stdout}")
             print(f"   Error: {e.stderr}")
             raise BuildError(f"PyInstaller failed: {e}")
+
+        finally:
+            # Restore original working directory
+            os.chdir(original_cwd)
 
     def create_release_info(self, version: str, changelog: str, exe_path: Path) -> dict:
         """Create release information JSON"""

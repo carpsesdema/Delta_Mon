@@ -7,7 +7,7 @@ from utils.auto_updater import AutoUpdater
 import os
 
 # DeltaMon Version - UPDATE THIS WHEN RELEASING!
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -22,8 +22,8 @@ if __name__ == "__main__":
     else:
         print(f"Warning: Application icon not found at {icon_path}")
 
-    # Create main window
-    window = OverlayMainWindow  # Change to OverlayMainWindow() if using overlay
+    # Create main window INSTANCE (not class!)
+    window = OverlayMainWindow()  # <-- FIXED: Added parentheses!
 
     # Add auto-updater
     updater = AutoUpdater(VERSION, window)
@@ -42,7 +42,6 @@ if __name__ == "__main__":
         help_menu.addAction(about_action)
     else:
         # If no menu bar, add update button to the UI
-        # You can add this to your existing button layout
         print(f"💡 Add 'Check Updates' button to UI - version {VERSION}")
 
         # Example: Add to existing layout (adjust based on your UI structure)
