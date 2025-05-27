@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 
 from utils.config_manager import ConfigManager
-from core.window_manager import WindowManager
+from core.enhanced_window_manager import EnhancedWindowManager  # Updated import
 from core.tos_navigator import TosNavigator
 
 # Enhanced Dark Theme for larger scale
@@ -59,6 +59,14 @@ SCALED_DARK_STYLE_SHEET = """
     }
     QPushButton#criticalButton:hover {
         background-color: #c0392b;
+    }
+    QPushButton#warningButton {
+        background-color: #f39c12;
+        color: #2c3e50;
+        font-weight: bold;
+    }
+    QPushButton#warningButton:hover {
+        background-color: #e67e22;
     }
     QTableWidget {
         background-color: #3c3c3c;
@@ -262,8 +270,10 @@ class ScaledMainWindow(QMainWindow):
         # State variables
         self._monitoring_active = False
         self.config_manager = ConfigManager()
-        self.window_manager = WindowManager(target_exact_title="Main@thinkorswim [build 1985]",
-                                            exclude_title_substring="DeltaMon")
+        self.window_manager = EnhancedWindowManager(  # Using enhanced version
+            main_window_title="Main@thinkorswim [build 1985]",
+            exclude_title_substring="DeltaMon"
+        )
         self.tos_navigator = None
         self.discovered_accounts = []
         self.setup_worker = None
@@ -312,6 +322,14 @@ class ScaledMainWindow(QMainWindow):
 
         # Top row - main buttons
         main_buttons_layout = QHBoxLayout()
+
+        # Check ToS Status button (new)
+        self.check_tos_button = QPushButton("🔍 Check ToS Status")
+        self.check_tos_button.setObjectName("warningButton")
+        self.check_tos_button.clicked.connect(self.check_tos_status)
+        main_buttons_layout.addWidget(self.check_tos_button)
+
+        main_buttons_layout.addSpacing(10)
 
         self.setup_template_button = QPushButton("🎯 Setup Template")
         self.setup_template_button.setObjectName("setupButton")
@@ -466,15 +484,107 @@ class ScaledMainWindow(QMainWindow):
         return stats_frame
 
     @Slot()
+    def check_tos_status(self):
+        """Check ToS status and guide user through any issues."""
+        print("🔍 Checking ToS status...")
+        self.log_monitoring_event("🔍 Checking Thinkorswim status...")
+
+        # Get comprehensive status
+        status_report = self.window_manager.get_tos_status_report()
+
+        # Create status message
+        status_message = "📊 ToS Status Report:\n\n"
+
+        if status_report['main_trading_available']:
+            status_message += "✅ Main trading window: Available\n"
+            status_message += "🎯 Status: Ready for monitoring!\n\n"
+            status_message += "Next steps:\n"
+            status_message += "• Click 'Setup Template' (if not done)\n"
+            status_message += "• Click 'Read Accounts from Dropdown'\n"
+            status_message += "• Start monitoring!"
+
+            # Enable buttons since ToS is ready
+            self.setup_template_button.setEnabled(True)
+            self.discover_button.setEnabled(True)
+            self.overall_status_label.setText("Status: ✅ ToS Ready")
+
+        elif status_report['login_required']:
+            status_message += "🔑 Login window detected\n"
+            status_message += "⚠️ Status: Login required\n\n"
+            status_message += "Please:\n"
+            status_message += "• Complete login in ToS\n"
+            status_message += "• Wait for main trading window\n"
+            status_message += "• Click 'Check ToS Status' again"
+
+            self.overall_status_label.setText("Status: 🔑 Login required")
+
+        elif status_report['launcher_open']:
+            status_message += "🚀 Launcher window detected\n"
+            status_message += "⚠️ Status: Need to open trading platform\n\n"
+            status_message += "Please:\n"
+            status_message += "• Open trading platform from launcher\n"
+            status_message += "• Wait for main window to load\n"
+            status_message += "• Click 'Check ToS Status' again"
+
+            self.overall_status_label.setText("Status: 🚀 Open trading platform")
+
+        elif status_report['other_tos_windows'] > 0:
+            status_message += f"⚠️ Found {status_report['other_tos_windows']} other ToS windows\n"
+            status_message += "⚠️ Status: Main trading window not detected\n\n"
+            status_message += "Possible issues:\n"
+            status_message += "• Main window still loading\n"
+            status_message += "• Wrong ToS window title\n"
+            status_message += "• ToS needs restart\n\n"
+            status_message += "Try:\n"
+            status_message += "• Wait a moment and check again\n"
+            status_message += "• Restart Thinkorswim completely"
+
+            self.overall_status_label.setText("Status: ⚠️ ToS loading or issues")
+
+        else:
+            status_message += "❌ No ToS windows found\n"
+            status_message += "❌ Status: Thinkorswim not running\n\n"
+            status_message += "Please:\n"
+            status_message += "• Start Thinkorswim application\n"
+            status_message += "• Complete login process\n"
+            status_message += "• Wait for trading interface to load\n"
+            status_message += "• Click 'Check ToS Status' again"
+
+            self.overall_status_label.setText("Status: ❌ Start Thinkorswim")
+
+        status_message += f"\n\nRecommended action:\n{status_report['recommended_action']}"
+
+        # Show status in message box
+        QMessageBox.information(self, "ToS Status Check", status_message)
+
+        # Log the status
+        self.log_monitoring_event(f"📊 ToS Status: {status_report['recommended_action']}")
+
+    @Slot()
     def setup_template(self):
         """Start the template setup process."""
         print("Template setup started...")
 
-        # Find ToS window
-        tos_hwnd = self.window_manager.find_tos_window()
+        # First check ToS status
+        if not self.window_manager.is_main_trading_window_available():
+            reply = QMessageBox.question(self, "ToS Not Ready",
+                                         "Main trading window not detected.\n\n"
+                                         "Would you like to check ToS status first?",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
+                self.check_tos_status()
+                return
+
+        # Find ToS window using smart detection
+        tos_hwnd = self.window_manager.find_tos_window_smart()
         if not tos_hwnd:
             QMessageBox.warning(self, "Setup Failed",
-                                "Could not find ToS window. Please ensure Thinkorswim is running.")
+                                "Could not find usable ToS window.\n\n"
+                                "Please ensure:\n"
+                                "• Thinkorswim is running\n"
+                                "• Main trading window is open\n"
+                                "• Login is completed\n\n"
+                                "Use 'Check ToS Status' for detailed information.")
             return
 
         # Focus and initialize
@@ -517,6 +627,13 @@ class ScaledMainWindow(QMainWindow):
     def discover_accounts(self):
         """Enhanced account discovery reading from the account dropdown."""
         self.log_monitoring_event("🔍 Starting dropdown-based discovery for all accounts...")
+
+        # Check ToS status first
+        if not self.window_manager.is_main_trading_window_available():
+            QMessageBox.warning(self, "ToS Not Ready",
+                                "Main trading window not available.\n\n"
+                                "Please use 'Check ToS Status' to resolve ToS issues first.")
+            return
 
         # Clear existing accounts
         self.accounts_table.setRowCount(0)
@@ -588,7 +705,7 @@ class ScaledMainWindow(QMainWindow):
                                     "• Dropdown didn't open properly\n"
                                     "• OCR could not read account names from list\n\n"
                                     "Try:\n"
-                                    "• Ensure ToS window is visible and active\n"
+                                    "• Use 'Check ToS Status' to verify ToS is ready\n"
                                     "• Run 'Setup Template' to improve dropdown detection\n"
                                     "• Check that account dropdown is in upper-left area\n"
                                     "• Verify accounts are loaded in ToS")
