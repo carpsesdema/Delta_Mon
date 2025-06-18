@@ -11,233 +11,179 @@ from utils.ocr_utils import OCRUtils
 
 
 class EnhancedDropdownReader:
-    FIXED_TRIGGER_BASE_X_RELATIVE = 404
-    FIXED_TRIGGER_BASE_Y_RELATIVE = 16
-    ASSUMED_TRIGGER_HEIGHT = 25
-    CLICK_OFFSET_X_IN_TRIGGER = 20
-    CLICK_OFFSET_Y_IN_TRIGGER = 8
+    """
+    Reads account names from the ToS dropdown, specifically designed to handle
+    long lists that require scrolling.
+    """
+    TRIGGER_TEMPLATE_NAME = "account_trigger.png"
+
+    # Define a generous area to capture below where the trigger is clicked.
+    # This should be large enough to contain the entire visible portion of the dropdown.
+    CAPTURE_OFFSET_X = -20  # Start capture slightly left of the trigger text
+    CAPTURE_OFFSET_Y = 25  # Start capture below the trigger bar
+    CAPTURE_WIDTH = 350
+    CAPTURE_HEIGHT = 500
+
+    SCROLL_AMOUNT = -500  # A large negative value for a significant scroll down
+    SCROLL_PAUSE = 0.75  # Time to wait for the UI to update after scrolling
 
     def __init__(self, tos_navigator: TosNavigator):
         self.tos_navigator = tos_navigator
         self.ocr_utils = OCRUtils()
 
     def read_all_accounts_from_dropdown(self, save_debug: bool = True) -> List[str]:
-        print("🔍 Reading all accounts from dropdown using before/after detection...")
+        """
+        Orchestrates the entire process of finding, clicking, scrolling,
+        and reading all accounts from the dropdown list.
+        """
+        print("🔍 Reading all accounts using scroll-and-capture method...")
 
-        # Take BEFORE screenshot
-        before_path = self._capture_area_before_click()
-        if not before_path:
-            print("❌ Failed to capture 'before' state")
+        trigger_location = self._find_and_click_trigger()
+        if not trigger_location:
+            print("❌ Failed to find and click the dropdown trigger. Aborting.")
             return []
 
-        # Click dropdown
-        if not self._click_dropdown_trigger():
-            print("❌ Failed to click dropdown trigger")
+        # Wait for the dropdown to fully open
+        time.sleep(1.5)
+
+        all_accounts = set()
+        last_known_count = -1  # Start at -1 to ensure the first loop runs
+
+        # Loop a max of 15 times (should be more than enough for any list)
+        for i in range(15):
+            print(f"--- Capture & Scroll Attempt #{i + 1} ---")
+
+            # Capture the current view of the dropdown
+            capture_path = self._capture_dropdown_area(trigger_location, i, save_debug)
+            if not capture_path:
+                print("⚠️ Failed to capture dropdown area, stopping scroll.")
+                break
+
+            # Read the text from the captured image
+            accounts_in_view = self.ocr_utils.extract_account_names(capture_path)
+            if accounts_in_view:
+                print(f"   Found {len(accounts_in_view)} potential names in this view.")
+                for acc in accounts_in_view:
+                    all_accounts.add(acc)
+            else:
+                print("   No text found in this view.")
+
+            # Check if we've reached the end of the list
+            if len(all_accounts) == last_known_count:
+                print("✅ No new accounts found after scrolling. Assuming end of list.")
+                break
+
+            last_known_count = len(all_accounts)
+            print(f"   Total unique accounts so far: {last_known_count}")
+
+            # Scroll for the next iteration
+            self._scroll_dropdown(trigger_location)
+            time.sleep(self.SCROLL_PAUSE)
+
+        self._close_dropdown(trigger_location)
+
+        if not all_accounts:
+            print("❌ No accounts were extracted. Please check the trigger template and OCR settings.")
             return []
 
-        print("⏳ Waiting for dropdown to fully expand...")
-        time.sleep(2.0)
+        final_list = sorted(list(all_accounts))
+        print(f"✅🎉 Success! Found a total of {len(final_list)} unique accounts from dropdown.")
+        return final_list
 
-        # Take AFTER screenshot
-        after_path = self._capture_area_after_click()
-        if not after_path:
-            print("❌ Failed to capture 'after' state")
-            return []
+    def _find_and_click_trigger(self) -> Optional[Tuple[int, int]]:
+        """Finds the 'Account:' trigger on screen using a template and clicks it."""
+        print(f"🎯 Searching for trigger template: '{self.TRIGGER_TEMPLATE_NAME}'...")
+        template_path = os.path.join(self.tos_navigator.templates_path, self.TRIGGER_TEMPLATE_NAME)
 
-        # Find the dropdown by comparing before/after
-        dropdown_area = self._find_dropdown_by_difference(before_path, after_path, save_debug)
-        if not dropdown_area:
-            print("❌ Could not detect dropdown area from difference")
-            self._close_dropdown()
-            return []
-
-        # Extract accounts from the detected dropdown area
-        account_names = self._extract_accounts_from_dropdown_area(dropdown_area, save_debug)
-
-        self._close_dropdown()
-
-        print(f"✅ Successfully extracted {len(account_names)} accounts from dropdown")
-        return account_names
-
-    def _capture_area_before_click(self) -> Optional[str]:
-        """Capture the area before clicking dropdown"""
-        window_rect = self.tos_navigator._get_window_rect()
-        if not window_rect:
+        if not os.path.exists(template_path):
+            print(f"❌ CRITICAL: Trigger template not found at {template_path}")
+            print("   Please ensure the screenshot is saved in the correct assets/templates/ folder.")
             return None
 
-        win_left, win_top = window_rect[0], window_rect[1]
+        try:
+            # Locate the center of the template on the screen with high confidence
+            location = pyautogui.locateCenterOnScreen(template_path, confidence=0.8)
+            if location:
+                print(f"   ✅ Found trigger at screen coordinates: {location}. Clicking...")
+                pyautogui.click(location)
+                return location
+            else:
+                print(f"   ❌ Could not locate the trigger template '{self.TRIGGER_TEMPLATE_NAME}' on the screen.")
+                print("      - Is the ToS window visible and not obstructed?")
+                print("      - Is the template image a clear, cropped screenshot?")
+                return None
+        except Exception as e:
+            print(f"❌ An error occurred during template matching: {e}")
+            return None
 
-        # Capture a wide area around where dropdown might appear
-        capture_x = win_left + 50
-        capture_y = win_top + 40
-        capture_width = 600
-        capture_height = 400
+    def _capture_dropdown_area(self, trigger_location: Tuple[int, int], attempt: int, save_debug: bool) -> Optional[
+        str]:
+        """Captures a fixed-size area below the trigger location."""
+        # Calculate the top-left corner of our capture zone
+        # *** FIX: Convert NumPy int64 to standard Python int ***
+        capture_x = int(trigger_location[0] + self.CAPTURE_OFFSET_X)
+        capture_y = int(trigger_location[1] + self.CAPTURE_OFFSET_Y)
 
-        save_dir = os.path.join(self.tos_navigator.captures_path, 'dropdown_captures')
+        capture_region = (capture_x, capture_y, self.CAPTURE_WIDTH, self.CAPTURE_HEIGHT)
+        print(f"   📸 Capturing dropdown area: {capture_region}")
+
+        save_dir = os.path.join(self.tos_navigator.captures_path, 'dropdown_scroll_captures')
         os.makedirs(save_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        save_path = os.path.join(save_dir, f'before_dropdown_{timestamp}.png')
+        save_path = os.path.join(save_dir, f'dropdown_view_{attempt}_{timestamp}.png')
 
         try:
-            screenshot = pyautogui.screenshot(region=(capture_x, capture_y, capture_width, capture_height))
-            screenshot.save(save_path)
-            print(f"📸 Before screenshot: {save_path}")
-            return save_path
-        except Exception as e:
-            print(f"❌ Error capturing before state: {e}")
-            return None
-
-    def _capture_area_after_click(self) -> Optional[str]:
-        """Capture the same area after clicking dropdown"""
-        window_rect = self.tos_navigator._get_window_rect()
-        if not window_rect:
-            return None
-
-        win_left, win_top = window_rect[0], window_rect[1]
-
-        # Same area as before
-        capture_x = win_left + 50
-        capture_y = win_top + 40
-        capture_width = 600
-        capture_height = 400
-
-        save_dir = os.path.join(self.tos_navigator.captures_path, 'dropdown_captures')
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        save_path = os.path.join(save_dir, f'after_dropdown_{timestamp}.png')
-
-        try:
-            screenshot = pyautogui.screenshot(region=(capture_x, capture_y, capture_width, capture_height))
-            screenshot.save(save_path)
-            print(f"📸 After screenshot: {save_path}")
-            return save_path
-        except Exception as e:
-            print(f"❌ Error capturing after state: {e}")
-            return None
-
-    def _find_dropdown_by_difference(self, before_path: str, after_path: str, save_debug: bool) -> Optional[str]:
-        """Find dropdown area by comparing before/after images"""
-        try:
-            img_before = cv2.imread(before_path)
-            img_after = cv2.imread(after_path)
-
-            if img_before is None or img_after is None:
-                print("❌ Could not read before/after images")
-                return None
-
-            if img_before.shape != img_after.shape:
-                print(f"⚠️ Image size mismatch, resizing...")
-                img_before = cv2.resize(img_before, (img_after.shape[1], img_after.shape[0]))
-
-            # Find difference
-            diff = cv2.absdiff(img_before, img_after)
-            gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-            _, thresh_diff = cv2.threshold(gray_diff, 30, 255, cv2.THRESH_BINARY)
-
-            # Find contours of differences
-            kernel = np.ones((5, 5), np.uint8)
-            dilated = cv2.dilate(thresh_diff, kernel, iterations=2)
-            contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            if not contours:
-                print("❌ No differences found between before/after images")
-                if save_debug:
-                    cv2.imwrite(before_path.replace('.png', '_diff_debug.png'), thresh_diff)
-                return None
-
-            # Find the largest difference (should be the dropdown)
-            largest_contour = max(contours, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(largest_contour)
-
-            # Add some padding
-            padding = 10
-            x = max(0, x - padding)
-            y = max(0, y - padding)
-            w = min(img_after.shape[1] - x, w + 2 * padding)
-            h = min(img_after.shape[0] - y, h + 2 * padding)
-
-            print(f"🎯 Detected dropdown area: ({x}, {y}) size: {w}x{h}")
-
-            # Extract just the dropdown area from the after image
-            dropdown_roi = img_after[y:y + h, x:x + w]
-
-            dropdown_path = before_path.replace('before_dropdown', 'detected_dropdown')
-            cv2.imwrite(dropdown_path, dropdown_roi)
-            print(f"💾 Dropdown area saved: {dropdown_path}")
-
+            screenshot = pyautogui.screenshot(region=capture_region)
             if save_debug:
-                # Save debug image showing the detected area
-                debug_img = img_after.copy()
-                cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 0), 3)
-                cv2.imwrite(before_path.replace('.png', '_detected_area.png'), debug_img)
-
-            return dropdown_path
-
+                screenshot.save(save_path)
+                print(f"      💾 Debug image saved to: {os.path.basename(save_path)}")
+            return save_path
         except Exception as e:
-            print(f"❌ Error finding dropdown by difference: {e}")
-            import traceback
-            print(traceback.format_exc())
+            print(f"   ❌ Error capturing dropdown area: {e}")
             return None
 
-    def _click_dropdown_trigger(self) -> bool:
-        print("🎯 Clicking dropdown trigger using fixed relative coordinates...")
-        window_rect = self.tos_navigator._get_window_rect()
-        if not window_rect:
-            print("❌ Cannot click dropdown: ToS window rect not found.")
-            return False
+    def _scroll_dropdown(self, trigger_location: Tuple[int, int]):
+        """Scrolls the mouse wheel down while the cursor is over the dropdown area."""
+        # Move mouse over the capture area to ensure it has focus for scrolling
+        # *** FIX: Convert NumPy int64 to standard Python int ***
+        scroll_target_x = int(trigger_location[0])
+        scroll_target_y = int(trigger_location[1] + self.CAPTURE_OFFSET_Y + 50)
 
-        win_left, win_top, _, _ = window_rect
+        print(f"   📜 Scrolling down at ({scroll_target_x}, {scroll_target_y})...")
+        pyautogui.moveTo(scroll_target_x, scroll_target_y)
+        pyautogui.scroll(self.SCROLL_AMOUNT)
 
-        click_x_absolute = win_left + self.FIXED_TRIGGER_BASE_X_RELATIVE + self.CLICK_OFFSET_X_IN_TRIGGER
-        click_y_absolute = win_top + self.FIXED_TRIGGER_BASE_Y_RELATIVE + self.CLICK_OFFSET_Y_IN_TRIGGER
-
-        print(f"🖱️ Clicking dropdown at: ({click_x_absolute}, {click_y_absolute})")
+    def _close_dropdown(self, trigger_location: Tuple[int, int]):
+        """Closes the dropdown by clicking the trigger again or clicking away."""
+        print("   🖱️ Closing dropdown menu...")
         try:
-            pyautogui.click(click_x_absolute, click_y_absolute)
-            return True
+            # A reliable way to close it is to just click the trigger again
+            pyautogui.click(trigger_location)
+            time.sleep(0.5)
         except Exception as e:
-            print(f"❌ Error clicking dropdown: {e}")
-            return False
-
-    def _extract_accounts_from_dropdown_area(self, dropdown_image_path: str, save_debug: bool) -> List[str]:
-        """Extract account names from the precisely detected dropdown area"""
-        print("🔬 Extracting account names from detected dropdown area...")
-
-        accounts = self.ocr_utils.extract_account_names(dropdown_image_path, debug_save=save_debug)
-
-        if accounts:
-            print(f"✅ Found {len(accounts)} accounts:")
-            for i, account in enumerate(accounts, 1):
-                print(f"   {i}. {account}")
-        else:
-            print("❌ No accounts extracted from dropdown area")
-
-        return accounts
-
-    def _close_dropdown(self):
-        try:
-            self.tos_navigator.click_somewhere_else_to_close_dropdown()
-            print("🖱️ Clicked to close dropdown")
-        except Exception as e:
-            print(f"⚠️ Could not close dropdown: {e}")
+            print(f"   ⚠️ Could not click to close dropdown: {e}")
 
 
 class DropdownAccountDiscovery:
+    """A wrapper class to simplify the process of discovering accounts for the UI."""
+
     def __init__(self, tos_navigator: Optional[TosNavigator] = None):
         if tos_navigator:
             self.tos_navigator = tos_navigator
         else:
+            # This fallback is for standalone testing of the script
             from core.window_manager import WindowManager
             print("ℹ️ DropdownAccountDiscovery creating its own WindowManager and TosNavigator.")
-            self.window_manager = WindowManager(
-                target_exact_title="Main@thinkorswim [build 1985]",
-                exclude_title_substring="DeltaMon"
-            )
-            tos_hwnd = self.window_manager.find_tos_window()
-            if not tos_hwnd:
-                raise RuntimeError("ToS window not found.")
+            # Use the robust manager
+            from core.enhanced_window_manager import EnhancedWindowManager
+            self.window_manager = EnhancedWindowManager()
+            status_report = self.window_manager.get_tos_status_report()
+            if not status_report['main_trading_available']:
+                raise RuntimeError("ToS main trading window not found.")
+
             if not self.window_manager.focus_tos_window():
                 print("⚠️ Warning: Could not focus ToS window.")
-            self.tos_navigator = TosNavigator(tos_hwnd)
+            self.tos_navigator = TosNavigator(self.window_manager.hwnd)
 
         self.dropdown_reader = EnhancedDropdownReader(self.tos_navigator)
         self.discovered_accounts = []
@@ -249,7 +195,7 @@ class DropdownAccountDiscovery:
                 status_callback(message)
 
         try:
-            update_status("🔍 Starting before/after dropdown detection...")
+            update_status("🔍 Starting scroll-and-capture account discovery...")
             self.discovered_accounts = self.dropdown_reader.read_all_accounts_from_dropdown(save_debug=True)
 
             if self.discovered_accounts:
@@ -257,30 +203,13 @@ class DropdownAccountDiscovery:
                 for i, account in enumerate(self.discovered_accounts, 1):
                     update_status(f"   {i:2d}. {account}")
             else:
-                update_status("❌ No accounts found via before/after detection.")
+                update_status("❌ No accounts found. Check logs and debug captures.")
             return self.discovered_accounts
         except Exception as e:
             update_status(f"❌ Discovery error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def get_discovered_accounts(self) -> List[str]:
         return self.discovered_accounts.copy()
-
-
-if __name__ == "__main__":
-    print("Enhanced Dropdown Reader - Before/After Detection Test")
-    print("=" * 60)
-    input("Press Enter to test before/after dropdown detection...")
-
-    try:
-        discovery = DropdownAccountDiscovery()
-        accounts = discovery.discover_all_accounts()
-
-        if accounts:
-            print(f"\n✅ SUCCESS! Found {len(accounts)} accounts:")
-            for i, account in enumerate(accounts, 1):
-                print(f"   {i:2d}. {account}")
-        else:
-            print("\n❌ No accounts found.")
-    except Exception as e:
-        print(f"❌ ERROR: {e}")

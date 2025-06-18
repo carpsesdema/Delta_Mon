@@ -15,9 +15,7 @@ from datetime import datetime
 from utils.config_manager import ConfigManager
 from core.enhanced_window_manager import EnhancedWindowManager
 from core.tos_navigator import TosNavigator
-from utils.credential_manager import CredentialManager
-from utils.tos_launcher import TosLauncher
-from ui.login_dialog import LoginDialog
+
 
 OVERLAY_DARK_STYLE_SHEET = """
     QWidget {
@@ -174,84 +172,6 @@ OVERLAY_DARK_STYLE_SHEET = """
 """
 
 
-class AutoLoginWorker(QThread):
-    status_update = Signal(str)
-    progress_update = Signal(int)
-    login_complete = Signal(bool)
-
-    def __init__(self, username, password, executable_path, tos_launcher, window_manager):
-        super().__init__()
-        self.username = username
-        self.password = password
-        self.executable_path = executable_path
-        self.tos_launcher = tos_launcher
-        self.window_manager = window_manager
-
-    def run(self):
-        try:
-            self.status_update.emit("🚀 Starting automatic ToS login...")
-            self.progress_update.emit(10)
-
-            self.status_update.emit("🔍 Checking current ToS status...")
-            status_report = self.window_manager.get_tos_status_report()
-            self.progress_update.emit(15)
-
-            if status_report['main_trading_available']:
-                self.status_update.emit("✅ Main trading window already available! Login successful.")
-                self.progress_update.emit(100)
-                self.login_complete.emit(True)
-                return
-
-            if status_report['total_tos_windows'] == 0 or status_report['launcher_open']:
-                if not self.executable_path or not os.path.exists(self.executable_path):
-                    self.status_update.emit(f"❌ Invalid or missing ToS executable path: {self.executable_path}")
-                    self.login_complete.emit(False)
-                    return
-
-                self.status_update.emit(f"🚀 Launching Thinkorswim from: {os.path.basename(self.executable_path)}...")
-                self.progress_update.emit(20)
-
-                launch_success = self.tos_launcher.launch_tos(self.executable_path)
-                if not launch_success:
-                    self.status_update.emit("❌ Failed to launch ToS application.")
-                    self.login_complete.emit(False)
-                    return
-
-                self.status_update.emit("✅ ToS launch command sent, waiting for interface...")
-                self.progress_update.emit(40)
-            elif not status_report['login_required']:
-                self.status_update.emit("ℹ️ ToS state ambiguous, attempting login anyway...")
-
-            self.status_update.emit("⏳ Waiting for ToS login screen to be ready...")
-            self.progress_update.emit(50)
-
-            login_sequence_initiated = self.tos_launcher.login_to_tos(self.username, self.password)
-            self.progress_update.emit(70)
-
-            if not login_sequence_initiated:
-                self.status_update.emit("❌ Automatic login input sequence failed or login window not found.")
-                self.login_complete.emit(False)
-                return
-
-            self.status_update.emit("✅ Login credentials submitted.")
-            self.progress_update.emit(85)
-
-            self.status_update.emit("⏳ Waiting for main trading window to appear post-login...")
-            main_window_hwnd = self.window_manager.wait_for_main_trading_window(timeout_seconds=60)
-
-            if main_window_hwnd:
-                self.status_update.emit("🎉 Login successful! Main trading window is ready.")
-                self.progress_update.emit(100)
-                self.login_complete.emit(True)
-            else:
-                self.status_update.emit("❌ Main trading window did not appear after login attempt.")
-                self.login_complete.emit(False)
-
-        except Exception as e:
-            self.status_update.emit(f"❌ AutoLoginWorker error: {str(e)}")
-            self.login_complete.emit(False)
-
-
 class ScaledTemplateSetupWorker(QThread):
     status_update = Signal(str)
     progress_update = Signal(int)
@@ -389,15 +309,11 @@ class OverlayMainWindow(QMainWindow):
         self._monitoring_active = False
         self.config_manager = ConfigManager()
         self.window_manager = EnhancedWindowManager(
-            main_window_title="Main@thinkorswim [build 1985]",
             exclude_title_substring="DeltaMon"
         )
-        self.credential_manager = CredentialManager()
-        self.tos_launcher = TosLauncher()
         self.tos_navigator = None
         self.discovered_accounts = []
         self.setup_worker = None
-        self.login_worker = None
         self.tos_hwnd = None
 
         self.scan_stats = {
@@ -414,8 +330,9 @@ class OverlayMainWindow(QMainWindow):
         self.stats_timer.timeout.connect(self.update_statistics_display)
         self.stats_timer.start(5000)
 
-        self.overall_status_label.setText("Status: Ready - Click '🔑 Auto-Login ToS' to begin")
+        self.overall_status_label.setText("Status: Ready - Click '🔍 Check ToS Status' to begin")
         self.log_monitoring_event("🚀 DeltaMon Overlay ready - Always on top of ToS!")
+        self.log_monitoring_event("💡 Please ensure ToS is running and logged in.")
 
     def _setup_ui_elements(self):
         control_panel = self.create_control_panel()
@@ -434,35 +351,24 @@ class OverlayMainWindow(QMainWindow):
         control_layout = QVBoxLayout(control_frame)
         main_buttons_layout = QHBoxLayout()
 
-        self.auto_login_button = QPushButton("🔑 Auto-Login")
-        self.auto_login_button.setObjectName("successButton")
-        self.auto_login_button.clicked.connect(self.start_auto_login_flow)
-        main_buttons_layout.addWidget(self.auto_login_button)
-
-        self.edit_credentials_button = QPushButton("✏️ Creds")
-        self.edit_credentials_button.setObjectName("editButton")
-        self.edit_credentials_button.clicked.connect(self.edit_credentials)
-        main_buttons_layout.addWidget(self.edit_credentials_button)
-        main_buttons_layout.addSpacing(5)
-
-        self.check_tos_button = QPushButton("🔍 Status")
-        self.check_tos_button.setObjectName("warningButton")
+        self.check_tos_button = QPushButton("🔍 Check ToS Status")
+        self.check_tos_button.setObjectName("successButton")
         self.check_tos_button.clicked.connect(self.check_tos_status)
         main_buttons_layout.addWidget(self.check_tos_button)
         main_buttons_layout.addSpacing(5)
 
-        self.setup_template_button = QPushButton("🎯 Template")
+        self.setup_template_button = QPushButton("🎯 Setup Template")
         self.setup_template_button.setObjectName("setupButton")
         self.setup_template_button.clicked.connect(self.setup_template)
         main_buttons_layout.addWidget(self.setup_template_button)
         main_buttons_layout.addSpacing(5)
 
-        self.discover_button = QPushButton("📋 Read Accounts")
+        self.discover_button = QPushButton("📋 Read Accounts from Dropdown")
         self.discover_button.clicked.connect(self.discover_accounts)
         main_buttons_layout.addWidget(self.discover_button)
         main_buttons_layout.addSpacing(10)
 
-        self.start_button = QPushButton("🚀 Start Monitor")
+        self.start_button = QPushButton("🚀 Start Monitoring")
         self.start_button.clicked.connect(self.start_monitoring)
         main_buttons_layout.addWidget(self.start_button)
 
@@ -566,7 +472,6 @@ class OverlayMainWindow(QMainWindow):
         stats_layout.addWidget(self.monitoring_log)
         return stats_frame
 
-    # NO MORE POPUP DIALOGS! Everything goes to logs instead
     def show_status_message(self, title: str, message: str, is_error: bool = False):
         """Replace popup dialogs with log messages"""
         emoji = "❌" if is_error else "ℹ️"
@@ -580,70 +485,6 @@ class OverlayMainWindow(QMainWindow):
             self.overall_status_label.setText(f"Status: ✅ {title}")
 
     @Slot()
-    def edit_credentials(self):
-        self.log_monitoring_event("✏️ Opening credential editor...")
-        login_dialog = LoginDialog(self)
-        login_dialog.login_successful.connect(self.on_credentials_saved_or_updated)
-        if login_dialog.exec() == QDialog.DialogCode.Accepted:
-            self.log_monitoring_event("✅ Credential dialog accepted. Credentials may have been updated.")
-        else:
-            self.log_monitoring_event("❌ Credential editing cancelled.")
-
-    @Slot(str, str, str)
-    def on_credentials_saved_or_updated(self, username, password, executable_path):
-        self.log_monitoring_event(f"🔑 Credentials processed for user: {username}.")
-        if executable_path:
-            self.log_monitoring_event(f"🛠️ ToS Executable Path: {executable_path}")
-        else:
-            self.log_monitoring_event("⚠️ ToS Executable Path not set.")
-        self.show_status_message("Credentials Saved", "Ready for Auto-Login")
-
-    @Slot()
-    def start_auto_login_flow(self):
-        self.log_monitoring_event("🔑 Initiating Auto-Login ToS flow...")
-        username, password, executable_path = self.credential_manager.get_credentials()
-        if not username or not password or not executable_path or not os.path.exists(executable_path):
-            self.log_monitoring_event("⚠️ Missing credentials or valid executable path. Opening setup dialog...")
-            login_dialog = LoginDialog(self)
-            login_dialog.login_successful.connect(self.on_credentials_saved_for_auto_login)
-            if login_dialog.exec() != QDialog.DialogCode.Accepted:
-                self.log_monitoring_event("❌ Credential setup for auto-login cancelled.")
-                self.overall_status_label.setText("Status: Auto-Login cancelled.")
-                return
-        else:
-            self.log_monitoring_event(f"✅ Found saved credentials and exec path. Proceeding to login.")
-            self._execute_auto_login(username, password, executable_path)
-
-    @Slot(str, str, str)
-    def on_credentials_saved_for_auto_login(self, username, password, executable_path):
-        self.log_monitoring_event("✅ Credentials saved/confirmed. Proceeding with auto-login.")
-        if not executable_path or not os.path.exists(executable_path):
-            self.log_monitoring_event(f"❌ Invalid or missing executable path after dialog: {executable_path}")
-            self.show_status_message("Auto-Login Error", "Executable path missing", True)
-            return
-        self._execute_auto_login(username, password, executable_path)
-
-    def _execute_auto_login(self, username: str, password: str, executable_path: str):
-        if not executable_path or not os.path.exists(executable_path):
-            self.log_monitoring_event(f"❌ Cannot execute auto-login: Invalid ToS executable path: {executable_path}")
-            self.show_status_message("Auto-Login Error", "Invalid executable path", True)
-            return
-
-        self.log_monitoring_event(f"🚀 Starting AutoLoginWorker with exec: {os.path.basename(executable_path)}")
-        self.update_button_states(login_active=True)
-        self.setup_progress.setVisible(True)
-        self.setup_progress.setValue(0)
-        self.setup_log_label.setVisible(True)
-        self.setup_log.setVisible(True)
-        self.setup_log.clear()
-        self.login_worker = AutoLoginWorker(username, password, executable_path,
-                                            self.tos_launcher, self.window_manager)
-        self.login_worker.status_update.connect(self.on_login_status_update)
-        self.login_worker.progress_update.connect(self.on_login_progress_update)
-        self.login_worker.login_complete.connect(self.on_login_complete)
-        self.login_worker.start()
-
-    @Slot()
     def check_tos_status(self):
         self.log_monitoring_event("🔍 Checking Thinkorswim status...")
         self.overall_status_label.setText("Status: Checking ToS...")
@@ -655,16 +496,16 @@ class OverlayMainWindow(QMainWindow):
             self.tos_hwnd = self.window_manager.hwnd
             tos_is_ready = True
         elif status_report['login_required']:
-            self.show_status_message("ToS Status", "Login required - use Auto-Login", True)
+            self.show_status_message("ToS Status", "Login required. Please login to ToS.", True)
             tos_is_ready = False
         elif status_report['launcher_open']:
-            self.show_status_message("ToS Status", "Launcher detected - use Auto-Login", True)
+            self.show_status_message("ToS Status", "Launcher detected. Please wait for ToS to load.", True)
             tos_is_ready = False
         elif status_report['other_tos_windows'] > 0:
             self.show_status_message("ToS Status", "Main window not detected", True)
             tos_is_ready = False
         else:
-            self.show_status_message("ToS Status", "ToS not running - use Auto-Login", True)
+            self.show_status_message("ToS Status", "ToS not running. Please start ToS.", True)
             tos_is_ready = False
 
         self.log_monitoring_event(f"📊 ToS Status: {status_report['recommended_action']}")
@@ -823,7 +664,7 @@ class OverlayMainWindow(QMainWindow):
         self.log_monitoring_event("⏹️ Monitoring stopped")
 
     def update_button_states(self, monitoring_active=None, tos_ready=None, setting_up_template=False,
-                             discovering_accounts=False, login_active=False):
+                             discovering_accounts=False):
         if monitoring_active is None:
             self._monitoring_active = self._monitoring_active
         else:
@@ -831,48 +672,18 @@ class OverlayMainWindow(QMainWindow):
 
         if tos_ready is None: tos_ready = bool(self.tos_hwnd)
 
-        login_worker_active = self.login_worker and self.login_worker.isRunning() if not login_active else login_active
         setup_worker_active = self.setup_worker and self.setup_worker.isRunning()
 
-        self.auto_login_button.setEnabled(
-            not self._monitoring_active and not login_worker_active and not setup_worker_active)
-        self.edit_credentials_button.setEnabled(
-            not self._monitoring_active and not login_worker_active and not setup_worker_active)
-        self.check_tos_button.setEnabled(
-            not self._monitoring_active and not login_worker_active and not setup_worker_active)
+        self.check_tos_button.setEnabled(not self._monitoring_active and not setup_worker_active)
         self.setup_template_button.setEnabled(
-            not self._monitoring_active and tos_ready and not login_worker_active and not setup_worker_active and not discovering_accounts)
+            not self._monitoring_active and tos_ready and not setup_worker_active and not discovering_accounts)
         self.discover_button.setEnabled(
-            not self._monitoring_active and tos_ready and not login_worker_active and not setup_worker_active and not setting_up_template)
+            not self._monitoring_active and tos_ready and not setup_worker_active and not setting_up_template)
         can_start_monitoring = bool(self.discovered_accounts) and tos_ready
         self.start_button.setEnabled(
-            not self._monitoring_active and can_start_monitoring and not login_worker_active and not setup_worker_active and not setting_up_template and not discovering_accounts)
+            not self._monitoring_active and can_start_monitoring and not setup_worker_active and not setting_up_template and not discovering_accounts)
         self.stop_button.setEnabled(self._monitoring_active)
 
-    @Slot(str)
-    def on_login_status_update(self, message):
-        self.overall_status_label.setText(f"Auto-Login: {message}")
-        self.setup_log.append(f"[Login] {message}")
-        scrollbar = self.setup_log.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
-        QApplication.processEvents()
-
-    @Slot(int)
-    def on_login_progress_update(self, value):
-        self.setup_progress.setValue(value)
-        QApplication.processEvents()
-
-    @Slot(bool)
-    def on_login_complete(self, success):
-        QTimer.singleShot(2000, lambda: self.setup_progress.setVisible(False))
-        if success:
-            self.show_status_message("Auto-Login Complete", "ToS ready for monitoring!")
-            self.log_monitoring_event("✅ Auto-login successful - ToS ready for monitoring!")
-            self.tos_hwnd = self.window_manager.hwnd
-        else:
-            self.show_status_message("Auto-Login Failed", "Check logs for details", True)
-            self.log_monitoring_event("❌ Auto-login failed - check credentials or ToS state.")
-        self.update_button_states(tos_ready=success, login_active=False)
 
     @Slot(str)
     def on_setup_status_update(self, message):

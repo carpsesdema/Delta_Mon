@@ -203,8 +203,6 @@ class DeltaMonBuilder:
                 "pytesseract",
                 "requests",
                 "configparser",
-                "keyring",
-                "cryptography",
             ]
 
             for imp in hidden_imports:
